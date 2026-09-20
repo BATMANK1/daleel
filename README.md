@@ -4,7 +4,7 @@ Answers questions about Royal Commission for Jubail and Yanbu college
 regulations in Arabic, with the exact clause cited.
 
 > **Status: in development.** This README grows with the repository.
-> No result is published here until it has been measured — see
+> No result is published here until it has been measured see
 > [Results](#results).
 
 ## The problem
@@ -35,8 +35,8 @@ no naive pipeline would notice. `daleel inventory data/raw/` reports it:
 Three distinct failure modes sit behind those numbers:
 
 1. **Presentation-form substitution.** In the two design-tool exports, most
-   Arabic is stored as Unicode Arabic Presentation Forms -- the contextual
-   glyph variants a renderer picks per letter position -- rather than as base
+   Arabic is stored as Unicode Arabic Presentation Forms the contextual
+   glyph variants a renderer picks per letter position rather than as base
    letters. A student typing `نظام` cannot match an index holding `ﻧﻈﺎم`:
    different codepoints, so zero term overlap.
 2. **Silently wrong text.** The Word and PowerPoint exports report 0%
@@ -68,9 +68,9 @@ An earlier draft of this README reported those control characters as corruption
 in the source documents. They are largely an artefact of the reading tool.
 
 Two consequences. Gate thresholds are only meaningful per backend and must be
-recorded with one. And the character-count disagreement -- pdfplumber returning
-nearly twice as much text for the calendar -- is itself unexplained and flagged
-for the table-reconstruction work, since duplicated or overlapping text objects
+recorded with one. And the character-count disagreement pdfplumber returning
+nearly twice as much text for the calendar is itself unexplained and flagged
+for the table reconstruction work, since duplicated or overlapping text objects
 would produce exactly this.
 
 Every naive pipeline built on this corpus fails, and fails *silently*:
@@ -90,11 +90,11 @@ daleel inventory data/raw/ --json     # machine-readable
 ## Dependency note
 
 Text extraction uses **pdfplumber** (MIT) rather than PyMuPDF. PyMuPDF is
-faster and exposes the same character geometry, but it is AGPL-licensed, which
+faster and exposes the same character geometry, but it is (AGPL) licensed, which
 is a blanket disqualifier at many organisations and would force this
-repository's own licence to match. On a 137-page corpus the speed difference is
+repository's own licence to match. On a 137 page corpus the speed difference is
 irrelevant, and pdfplumber exposes geometry at character rather than word
-level -- which the table reconstruction work needs anyway.
+level which the table reconstruction work needs anyway.
 
 ## Results
 
