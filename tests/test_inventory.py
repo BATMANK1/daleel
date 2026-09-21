@@ -118,3 +118,11 @@ def test_char_stats_ratios_are_independent_of_text_length() -> None:
     small = CharStats(chars=100, bidi_controls=10)
     large = CharStats(chars=10_000, bidi_controls=1_000)
     assert small.bidi_per_1k == large.bidi_per_1k == pytest.approx(100.0)
+
+
+def test_form_feed_is_page_separator_not_corruption() -> None:
+    # pdftotext writes a form feed after every page. Counting it as a control
+    # character made every document look slightly corrupt: exactly one "bad"
+    # character per page, on all five documents.
+    stats = analyse_text("page one\fpage two\f")
+    assert stats.c0_controls == 0

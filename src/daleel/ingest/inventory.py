@@ -46,8 +46,9 @@ BIDI_CONTROLS = frozenset(
     }
 )
 
-# Tab, newline and carriage return are legitimate layout, not corruption.
-BENIGN_C0 = frozenset({0x09, 0x0A, 0x0D})
+# Layout, not corruption: tab, newline, carriage return, and form feed,
+# which pdftotext writes after every page as a page separator.
+BENIGN_C0 = frozenset({0x09, 0x0A, 0x0C, 0x0D})
 
 
 def _in_ranges(codepoint: int, ranges: tuple[tuple[int, int], ...]) -> bool:
