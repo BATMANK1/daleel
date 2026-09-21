@@ -1,5 +1,7 @@
 # Daleel · دليل
 
+[![CI](https://github.com/BATMANK1/daleel/actions/workflows/ci.yml/badge.svg)](https://github.com/BATMANK1/daleel/actions/workflows/ci.yml)
+
 Answers questions about Royal Commission for Jubail and Yanbu college
 regulations in Arabic, with the exact clause cited.
 
@@ -27,7 +29,7 @@ no naive pipeline would notice. `daleel inventory data/raw/` reports it:
 | Document | Producer | Pages | Chars | ch/page | Presentation forms |
 |---|---|---|---|---|---|
 | Student Guide 2025 | PDFium | 86 | 109,280 | 1,271 | **77%** |
-| Academic weeks 1448 | Illustrator | 3 | 15,060 | 5,020 | **61%** |
+| Academic weeks 1448 | Adobe PDF Library 18.00 | 3 | 4,811 | 1,604 | **71%** |
 | Guidance manual | Word 2019 | 19 | 10,629 | 559 | 0% |
 | Library services | PowerPoint 2019 | 16 | 4,924 | 308 | 0% |
 | Orientation 1446 | Word 2019 | 13 | 2,595 | 200 | 0% |
@@ -51,32 +53,23 @@ Three distinct failure modes sit behind those numbers:
 
 ### The failure signature depends on the extraction backend
 
-Worth stating because it changes how the gate must be calibrated. The same two
-documents, read with poppler's `pdftotext` instead of pdfplumber:
+All five documents, read with pdfplumber and with poppler's `pdftotext`:
 
-| Document | Backend | Chars | Presentation forms | Bidi controls /1k | C0 controls /1k |
-|---|---|---|---|---|---|
-| Academic weeks 1448 | pdftotext | 8,483 | 61% | 232.0 | 125.8 |
-| Academic weeks 1448 | pdfplumber | 15,060 | 61% | 0.0 | 0.0 |
-| Guidance manual | pdftotext | 12,975 | 0% | 126.1 | 1.5 |
-| Guidance manual | pdfplumber | 10,629 | 0% | 0.0 | 0.0 |
+| Document | pdfplumber chars | pdftotext chars | Presentation forms | pdftotext bidi controls /1k |
+|---|---|---|---|---|
+| Student Guide 2025 | 109,280 | 120,157 | 77% | 93.5 |
+| Academic weeks 1448 | 4,811 | 5,776 | 71% | 156.5 |
+| Guidance manual | 10,629 | 12,976 | 0% | 126.1 |
+| Library services | 4,924 | 5,624 | 0% | 121.3 |
+| Orientation 1446 | 2,595 | 3,089 | 0% | 139.9 |
 
-Presentation-form ratio agrees across backends, so it is a property of the PDF.
-The bidirectional and C0 control characters are not: `pdftotext` inserts bidi
-marks itself to make RTL output display correctly, and pdfplumber emits none.
-An earlier draft of this README reported those control characters as corruption
-in the source documents. They are largely an artefact of the reading tool.
+Presentation-form ratio is identical under both backends on every document, so it is a property of the PDFs. The bidirectional control characters are not. `pdftotext` inserts them itself so right-to-left output displays correctly, and pdfplumber emits none on any document. An earlier draft of this README reported them as corruption in the source documents; they are an artefact of the reading tool.
 
-Two consequences. Gate thresholds are only meaningful per backend and must be
-recorded with one. And the character-count disagreement pdfplumber returning
-nearly twice as much text for the calendar is itself unexplained and flagged
-for the table reconstruction work, since duplicated or overlapping text objects
-would produce exactly this.
+`pdftotext` also writes a form feed after every page. Once those and its bidi marks are subtracted, the two backends agree on text length within 2% on four documents and 6.5% on the guidance manual. Quality gate thresholds are therefore only meaningful per backend, and must be recorded with one.
 
-Every naive pipeline built on this corpus fails, and fails *silently*:
-retrieving nothing relevant and generating a confident answer anyway. So
-extraction here is a component with its own tests and its own quality gate,
-rather than a preprocessing line.
+### Provenance
+
+The 1448 academic calendar first added to the corpus turned out, on reading its footer, to be an unofficial student redesign that states it does not represent the Royal Commission. It was replaced with the official calendar. The unofficial file was also the only source of real control-character corruption seen so far, and of a large unexplained disagreement in character counts between the two backends. Both left the corpus with it.
 
 ## Usage
 
