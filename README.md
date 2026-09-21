@@ -1,5 +1,7 @@
 # Daleel · دليل
 
+[![CI](https://github.com/BATMANK1/daleel/actions/workflows/ci.yml/badge.svg)](https://github.com/BATMANK1/daleel/actions/workflows/ci.yml)
+
 Answers questions about Royal Commission for Jubail and Yanbu college
 regulations in Arabic, with the exact clause cited.
 
