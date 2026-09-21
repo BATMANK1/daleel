@@ -27,7 +27,7 @@ no naive pipeline would notice. `daleel inventory data/raw/` reports it:
 | Document | Producer | Pages | Chars | ch/page | Presentation forms |
 |---|---|---|---|---|---|
 | Student Guide 2025 | PDFium | 86 | 109,280 | 1,271 | **77%** |
-| Academic weeks 1448 | Illustrator | 3 | 15,060 | 5,020 | **61%** |
+| Academic weeks 1448 | Adobe PDF Library 18.00 | 3 | 4,811 | 1,604 | **71%** |
 | Guidance manual | Word 2019 | 19 | 10,629 | 559 | 0% |
 | Library services | PowerPoint 2019 | 16 | 4,924 | 308 | 0% |
 | Orientation 1446 | Word 2019 | 13 | 2,595 | 200 | 0% |

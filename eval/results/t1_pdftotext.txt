@@ -1,0 +1,5 @@
+data/raw/academic_weeks_1448.pdf: chars=5776 presform=71% bidi/1k=156.5 ctrl/1k=0.0
+data/raw/guidance_manual.pdf: chars=12976 presform=0% bidi/1k=126.1 ctrl/1k=0.0
+data/raw/library_services_2024_2025.pdf: chars=5624 presform=0% bidi/1k=121.3 ctrl/1k=0.0
+data/raw/orientation_1446.pdf: chars=3089 presform=0% bidi/1k=139.9 ctrl/1k=0.0
+data/raw/student_guide_2025.pdf: chars=120157 presform=77% bidi/1k=93.5 ctrl/1k=0.0
