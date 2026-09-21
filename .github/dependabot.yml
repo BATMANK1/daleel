@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Keeps the action versions in ci.yml current. Monthly keeps the PR noise low.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci

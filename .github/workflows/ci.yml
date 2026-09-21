@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege
+permissions:
+  contents: read
+
+# A new push to the same branch cancels the run it supersedes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Each leg reports independently, so a 3.13-only failure is visible
+      # as exactly that rather than cancelling the 3.12 run.
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Create environment
+        run: |
+          uv venv --python ${{ matrix.python-version }}
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Install
+        run: uv pip install -e ".[dev]"
+
+      - name: Pre-commit hooks
+        # The same hooks at the same pinned versions as run locally. Calling
+        # ruff directly here would let CI's ruff drift from the pre-commit
+        # ruff, so a check could pass in one place and fail in the other.
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Tests
+        # No corpus here: the PDFs are not redistributable. The suite runs
+        # without them because analyse_text is a pure function over a string.
+        run: pytest
