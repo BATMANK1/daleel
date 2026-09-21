@@ -25,7 +25,8 @@ applied.
 ## 1. Files
 
 1.1 One file per page, named `<doc_id>_p<NN>.txt` with a two-digit page number:
-`guidance_manual_p02.txt`.
+`guidance_manual_p02.txt`. `NN` is the PDF page index, as `pdftoppm` numbers
+it, not the page number printed on the page.
 
 1.2 A table on the page goes in a separate `<doc_id>_p<NN>.csv`. Everything else
 on that page stays in the `.txt`. See section 6.
@@ -36,6 +37,11 @@ documents are not redistributable. Back the folder up privately, since git is
 not tracking it.
 
 1.4 UTF-8, LF line endings, no byte order mark, one trailing newline.
+
+1.5 Dense pages may be transcribed by region rather than in full. A region is
+one or more complete blocks (see 4.3), transcribed completely under the same
+rules and named `<doc_id>_p<NN>_r<K>.txt`. The log records which blocks each
+region covers.
 
 ## 2. Source
 
@@ -60,7 +66,9 @@ to fix.
 typed. A printed الأحـــد is typed الأحد.
 
 3.4 **Diacritics** (fatha, damma, kasra, shadda, sukun, tanween) only where they
-are printed.
+are printed, each typed directly after the letter it sits on. Placement varies
+even within one page: tanween may sit on the letter before the alef (يومًا) or
+on the alef itself (أسبوعاً). Type what each word shows.
 
 3.5 **Ligatures** are typed as their component letters. لا is ل followed by ا,
 which the keyboard does for you. A single-glyph ﷲ is typed الله.
@@ -89,8 +97,11 @@ in the file.
 one blank line. Each heading goes on its own line.
 
 4.4 Numbers inside Arabic text go where they occur in the sentence, with the
-number itself typed normally: `3.75`. The editor may display it in a strange
-position; trust the order you typed, not the display.
+number itself typed normally: `3.75`. A run of Latin letters, numbers and
+symbols (`X 20%`, `(DN)`) is read left to right as a single unit, even inside
+Arabic text. The editor may display such runs in a strange position; trust the
+order you typed, not the display. To check the order of items on a mixed line,
+split its image into left and right halves: the right-hand item is read first.
 
 4.5 **Ranges on an Arabic page** are typed in reading order, right-hand item
 first. A range printed as `28/11/2026 - 20/11/2026` is typed
@@ -103,6 +114,10 @@ correct and not something to fix.
 
 4.7 **List numbering** is typed if it is text (١. or 1- or أ). Decorative
 bullets, check marks and icons are omitted.
+
+4.8 A **number badge** attached to a box (01, 02, 03) belongs to that box: it
+is typed on the line directly after the box's text, with no blank line
+between them.
 
 ## 5. What to include
 
@@ -135,6 +150,17 @@ wording. Two items in one cell are separated by ` | `. That column is a human
 reading of colour; record it as such in the page log (section 8).
 
 6.6 A field containing a comma is wrapped in double quotes.
+
+6.7 Both annotators **agree the columns before either starts**. Cell-by-cell
+comparison only works if the columns are identical.
+
+6.8 Text that wraps onto several lines within one cell is joined into one line
+with single spaces. A CSV cell holds no line breaks.
+
+6.9 Dates are typed as printed, including suffixes such as م, with هـ typed as
+ه under 3.3. Ranges go start first under 4.5, including compressed ranges: a
+range printed `2026/09/26-23` is typed `2026/09/23-26`. The same applies to
+ranges of day names.
 
 ## 7. Uncertainty
 
