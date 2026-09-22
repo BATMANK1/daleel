@@ -157,10 +157,15 @@ comparison only works if the columns are identical.
 6.8 Text that wraps onto several lines within one cell is joined into one line
 with single spaces. A CSV cell holds no line breaks.
 
-6.9 Dates are typed as printed, including suffixes such as م, with هـ typed as
-ه under 3.3. Ranges go start first under 4.5, including compressed ranges: a
-range printed `2026/09/26-23` is typed `2026/09/23-26`. The same applies to
-ranges of day names.
+6.9 Dates are typed exactly as printed, including suffixes such as م, with هـ
+typed as ه under 3.3. No ordering is imposed. A compressed range such as
+`2026/09/26-23` is a single left-to-right run under 4.4, so it is read and
+typed in that order, even though the later day comes first. Rule 4.5 applies
+only where a range is made of separate runs or of Arabic words, as in
+`20/11/2026 - 28/11/2026` or `الأربعاء-السبت`.
+6.10 A cell mixing Arabic with digits or Latin text cannot be checked by eye:
+editors and terminals reorder it for display. Verify such cells by printing
+their codepoints, not by reading the screen.
 
 ## 7. Uncertainty
 
