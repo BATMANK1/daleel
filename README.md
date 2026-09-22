@@ -71,6 +71,30 @@ Presentation-form ratio is identical under both backends on every document, so i
 
 The 1448 academic calendar first added to the corpus turned out, on reading its footer, to be an unofficial student redesign that states it does not represent the Royal Commission. It was replaced with the official calendar. The unofficial file was also the only source of real control-character corruption seen so far, and of a large unexplained disagreement in character counts between the two backends. Both left the corpus with it.
 
+## Extraction routing
+
+`daleel route data/raw/` predicts, for each document, which extraction path to
+try first and which failure to expect, from the software recorded in its
+metadata:
+
+| Document | Producer | Path | Expected failure |
+|---|---|---|---|
+| Student Guide 2025 | PDFium | text layer | presentation forms |
+| Academic weeks 1448 | Adobe PDF library 18.00 | text layer | presentation forms |
+| Guidance manual | Microsoft® Word 2019 | OCR | lossy substitution |
+| Library services | Microsoft® PowerPoint® 2019 | OCR | lossy substitution |
+| Orientation 1446 | Microsoft® Word 2019 | OCR | lossy substitution |
+
+A route is a prior, not a verdict. The quality gate still checks every
+document, so a wrong prediction costs time and never correctness.
+
+The rules come from five documents, and each rule in the code names the
+documents it rests on. Of the three Microsoft documents, only the guidance
+manual has been checked against its rendered page; the library guide's text
+visibly scrambles, and the orientation guide's route is still a prediction.
+Software with no evidence behind it, including other Microsoft and Adobe
+products, falls to a default: try the text layer and let the gate decide.
+
 ## Usage
 
 ```bash
@@ -78,6 +102,8 @@ uv venv --python 3.12 && source .venv/bin/activate
 uv pip install -e ".[dev]"
 daleel inventory data/raw/            # aligned table
 daleel inventory data/raw/ --json     # machine-readable
+daleel route data/raw/            # predicted extraction path per document
+daleel route data/raw/ --json
 ```
 
 ## Dependency note
