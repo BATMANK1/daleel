@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pdfplumber
 
+from daleel.ingest.metadata import metadata_from
+
 """Arabic Presentation Forms-A and -B hold the contextual glyph variants a
 renderer selects per letter position. A text layer emitting these has stored
 display forms rather than characters, so a query typed in base letters can
@@ -192,8 +194,8 @@ def inspect_pdf(path: Path, font_sample_pages: int = 5, progress: bool = False) 
     font_names: set[str] = set()
 
     with pdfplumber.open(path) as pdf:
-        producer = _metadata_value(pdf.metadata, "Producer")
-        creator = _metadata_value(pdf.metadata, "Creator")
+        meta = metadata_from(pdf)
+        producer, creator = meta.producer, meta.creator
         page_count = len(pdf.pages)
 
         for number, page in enumerate(pdf.pages, start=1):
