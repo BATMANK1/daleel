@@ -15,7 +15,7 @@ BASE_ARABIC = "\u0646\u0638\u0627\u0645"
 
 # The same word in Presentation Forms-B -- what the main guide's text layer
 # emits. Different codepoints, so no term overlap with the above.
-PRESENTATION_ARABIC = "\ufee7\ufed8\ufe8e\ufee1"
+PRESENTATION_ARABIC = "\ufee7\ufec8\ufe8e\ufee1"
 
 
 def test_empty_text_is_all_zeros_and_does_not_divide_by_zero() -> None:
