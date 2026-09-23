@@ -3,6 +3,7 @@ data/raw/*
 !data/raw/.gitkeep
 data/interim/
 data/processed/
+data/external/
 
 # Secrets
 .env

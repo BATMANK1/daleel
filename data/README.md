@@ -17,3 +17,14 @@ All five are obtainable from the college's student affairs office or the RCJY
 education portal.
 
 Filenames matter: the ingestion code keys document metadata off them.
+
+## Lexicon
+
+The quality gate checks extracted words against the CAMeL Lab's Modern
+Standard Arabic frequency list (Khalifa et al., 2021), licensed CC BY-SA 4.0.
+It is downloaded, never committed:
+
+    python3 scripts/fetch_lexicon.py
+
+This saves a 69 MB zip to `data/external/`, verifies it against a pinned
+checksum, and checks that the whole list is sorted by frequency.
