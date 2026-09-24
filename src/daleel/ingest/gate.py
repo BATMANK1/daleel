@@ -19,8 +19,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from daleel.ingest.extract import page_texts
 from daleel.ingest.lexicon import LEXICON_ZIP, load_lexicon
-from daleel.ingest.quality import PageQuality
+from daleel.ingest.quality import PageQuality, measure
 
 # Sound pages scored at least 99% and broken ones at most 88%. The threshold
 # sits above that gap's midpoint on purpose: passing a broken page puts wrong
@@ -96,3 +97,27 @@ def decide(quality: PageQuality) -> GateDecision:
 def load_gate_lexicon(zip_path: Path = LEXICON_ZIP) -> frozenset[str]:
     """The lexicon at the cutoff the threshold was calibrated for."""
     return load_lexicon(zip_path, min_frequency=LEXICON_CUTOFF)
+
+
+@dataclass(frozen=True)
+class PageVerdict:
+    """One page's measurements and the verdict drawn from them."""
+
+    page: int
+    quality: PageQuality
+    decision: GateDecision
+
+    def to_dict(self) -> dict:
+        return {"page": self.page, **self.decision.to_dict(), **self.quality.to_dict()}
+
+
+def gate_document(path: Path, lexicon: frozenset[str]) -> list[PageVerdict]:
+    """Extract, measure and judge every page of a PDF, the way the gate was calibrated.
+
+    Pass the lexicon from load_gate_lexicon: the threshold means nothing with any other.
+    """
+    verdicts = []
+    for number, text in enumerate(page_texts(path), start=1):
+        quality = measure(text, lexicon)
+        verdicts.append(PageVerdict(page=number, quality=quality, decision=decide(quality)))
+    return verdicts
