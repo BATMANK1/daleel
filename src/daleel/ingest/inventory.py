@@ -1,8 +1,8 @@
 """Measure what a PDF's text layer actually contains.
 
 This corpus has three distinct extraction failure modes and none of them
-announce themselves, so the decision about which extraction path to use -- and
-whether to trust a text layer at all -- has to rest on numbers rather than on
+announce themselves, so the decision about which extraction path to use, and
+whether to trust a text layer at all, has to rest on numbers rather than on
 glancing at a couple of pages.
 
 This module only reports. It deliberately passes no judgement: thresholds and
