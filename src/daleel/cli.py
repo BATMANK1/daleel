@@ -9,13 +9,14 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from daleel.ingest.extract import BACKENDS
 from daleel.ingest.gate import PageVerdict, Verdict, gate_document, load_gate_lexicon
 from daleel.ingest.inventory import format_table, inventory_dir, to_json
 from daleel.ingest.lexicon import LEXICON_ZIP
 from daleel.ingest.metadata import PdfMetadata, read_metadata
 from daleel.ingest.router import route
 
-# shared
+# --- shared ------------------------------------------------------------------
 
 
 def _directory_error(path: Path) -> int | None:
@@ -56,7 +57,7 @@ def _format_rows(rows: Sequence[dict], columns: Sequence[tuple[str, str]]) -> st
     return "\n".join(lines)
 
 
-# inventory
+# --- inventory ---------------------------------------------------------------
 
 
 def _add_inventory_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -75,6 +76,12 @@ def _add_inventory_parser(subparsers: argparse._SubParsersAction) -> None:
         "--out", type=Path, default=None, help="write output to a file as well as stdout"
     )
     parser.add_argument("--quiet", action="store_true", help="suppress per-page progress on stderr")
+    parser.add_argument(
+        "--backend",
+        choices=BACKENDS,
+        default=BACKENDS[0],
+        help="text extractor (default: %(default)s); pdfplumber is kept for comparison",
+    )
 
 
 def _run_inventory(args: argparse.Namespace) -> int:
@@ -82,7 +89,7 @@ def _run_inventory(args: argparse.Namespace) -> int:
     if error is not None:
         return error
 
-    inventories = inventory_dir(args.path, progress=not args.quiet)
+    inventories = inventory_dir(args.path, progress=not args.quiet, backend=args.backend)
     if not inventories:
         return _report_no_pdfs(args.path)
 
@@ -97,7 +104,7 @@ def _run_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
-# route
+# --- route -------------------------------------------------------------------
 
 _ROUTE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("file", "file"),
@@ -159,7 +166,7 @@ def _run_route(args: argparse.Namespace) -> int:
     return 0
 
 
-# gate
+# --- gate --------------------------------------------------------------------
 
 _GATE_SUMMARY_COLUMNS: tuple[tuple[str, str], ...] = (
     ("file", "file"),
@@ -272,7 +279,7 @@ def _run_gate(args: argparse.Namespace) -> int:
     return 0
 
 
-# entry point
+# --- entry point -------------------------------------------------------------
 
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "inventory": _run_inventory,

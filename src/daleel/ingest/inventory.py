@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pdfplumber
 
+from daleel.ingest.extract import PageCallback, page_texts
 from daleel.ingest.metadata import metadata_from
 from daleel.normalize.arabic import (
     BIDI_CONTROLS,
@@ -148,6 +149,7 @@ class PdfInventory:
     fonts: int = 0
     font_sample_pages: int = 0
     errors: list[str] = field(default_factory=list)
+    backend: str = "pypdfium2"
 
     @property
     def chars_per_page(self) -> float:
@@ -158,6 +160,7 @@ class PdfInventory:
     def to_dict(self) -> dict:
         return {
             "file": self.path.name,
+            "backend": self.backend,
             "pages": self.pages,
             "producer": self.producer,
             "creator": self.creator,
@@ -169,63 +172,67 @@ class PdfInventory:
         }
 
 
-def inspect_pdf(path: Path, font_sample_pages: int = 5, progress: bool = False) -> PdfInventory:
+def _progress(path: Path) -> PageCallback:
+    def report(number: int, count: int) -> None:
+        print(f"\r  {path.name}: page {number}/{count}", end="", file=sys.stderr, flush=True)
+
+    return report
+
+
+def inspect_pdf(
+    path: Path,
+    font_sample_pages: int = 5,
+    progress: bool = False,
+    backend: str = "pypdfium2",
+) -> PdfInventory:
     """Extract a PDF's text layer and measure it.
 
-    Font names are collected from the first `font_sample_pages` pages only.
-    Reading `page.chars` materialises a dict per glyph, which on an 86-page
-    document costs hundreds of megabytes for a diagnostic that a handful of
-    pages answers just as well. The sample size is recorded so the number is
-    never mistaken for a full count.
+    Text comes from `backend`, as daleel.ingest.extract reads it. Metadata and
+    font names always come from pdfplumber, which remains the tool for a PDF's
+    structure. Font names are collected from the first `font_sample_pages`
+    pages only: reading `page.chars` materialises a dict per glyph, which on an
+    86-page document costs hundreds of megabytes for a diagnostic that a
+    handful of pages answers just as well. The sample size is recorded so the
+    number is never mistaken for a full count.
     """
     errors: list[str] = []
-    parts: list[str] = []
-    font_names: set[str] = set()
+    report = _progress(path) if progress and sys.stderr.isatty() else None
+    texts = page_texts(path, backend, errors=errors, on_page=report)
 
+    font_names: set[str] = set()
     with pdfplumber.open(path) as pdf:
         meta = metadata_from(pdf)
-        producer, creator = meta.producer, meta.creator
         page_count = len(pdf.pages)
-
-        for number, page in enumerate(pdf.pages, start=1):
+        for number, page in enumerate(pdf.pages[:font_sample_pages], start=1):
             try:
-                parts.append(page.extract_text() or "")
-                if number <= font_sample_pages:
-                    font_names.update(char["fontname"] for char in page.chars if "fontname" in char)
-            except Exception as exc:  # one bad page must not abort the
-                # inventory; a page that cannot be read is itself a finding.
-                errors.append(f"page {number}: {type(exc).__name__}: {exc}")
+                font_names.update(char["fontname"] for char in page.chars if "fontname" in char)
+            except Exception as exc:  # unreadable fonts are a finding, not a crash
+                errors.append(f"page {number} fonts: {type(exc).__name__}: {exc}")
             finally:
-                # pdfplumber caches parsed objects per page. Without this a
-                # long document holds every page in memory at once.
                 page.flush_cache()
-                if progress and sys.stderr.isatty():
-                    print(
-                        f"\r  {path.name}: page {number}/{page_count}",
-                        end="",
-                        file=sys.stderr,
-                        flush=True,
-                    )
 
-    if progress and sys.stderr.isatty():
+    if report is not None:
         print(f"\r  {path.name}: {page_count} pages read", file=sys.stderr)
 
     return PdfInventory(
         path=path,
         pages=page_count,
-        producer=producer,
-        creator=creator,
-        stats=analyse_text("\n".join(parts)),
+        producer=meta.producer,
+        creator=meta.creator,
+        stats=analyse_text("\n".join(texts)),
         fonts=len(font_names),
         font_sample_pages=min(font_sample_pages, page_count),
         errors=errors,
+        backend=backend,
     )
 
 
-def inventory_dir(directory: Path, progress: bool = False) -> list[PdfInventory]:
+def inventory_dir(
+    directory: Path, progress: bool = False, backend: str = "pypdfium2"
+) -> list[PdfInventory]:
     """Inspect every PDF in a directory, in a stable order."""
     pdfs = sorted(p for p in directory.glob("*.pdf") if p.is_file())
-    return [inspect_pdf(path, progress=progress) for path in pdfs]
+    return [inspect_pdf(path, progress=progress, backend=backend) for path in pdfs]
 
 
 _COLUMNS: tuple[tuple[str, str], ...] = (
@@ -267,6 +274,11 @@ def format_table(inventories: list[PdfInventory]) -> str:
 
     out = ["  ".join(h.ljust(w) for h, w in zip(headers, widths, strict=True)), divider]
     out.extend("  ".join(c.ljust(w) for c, w in zip(line, widths, strict=True)) for line in cells)
+
+    # The same PDF measures very differently through different extractors.
+    backends = ", ".join(sorted({inv.backend for inv in inventories}))
+    out.append("")
+    out.append(f"Text layers read with {backends}.")
 
     notes = [f"{inv.path.name}: {err}" for inv in inventories for err in inv.errors]
     if notes:
