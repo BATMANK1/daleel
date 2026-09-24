@@ -63,7 +63,7 @@ All five documents, read with pdfplumber and with poppler's `pdftotext`:
 | Library services | 4,924 | 5,624 | 0% | 121.3 |
 | Orientation 1446 | 2,595 | 3,089 | 0% | 139.9 |
 
-Presentation-form ratio is identical under both backends on every document, so it is a property of the PDFs. The bidirectional control characters are not. `pdftotext` inserts them itself so right-to-left output displays correctly, and pdfplumber emits none on any document. An earlier draft of this README reported them as corruption in the source documents; they are an artefact of the reading tool.
+The presentation-form ratio agrees between these two, but a third extractor, pypdfium2, returns base letters for the same glyphs, so the ratio describes how an extractor maps glyphs rather than the PDF alone. Word order differs too: pdfplumber writes Arabic in visual order, spelling every word backwards, which is why the pipeline extracts text with pypdfium2 ([calibration](eval/results/gate_calibration.md)).
 
 `pdftotext` also writes a form feed after every page. Once those and its bidi marks are subtracted, the two backends agree on text length within 2% on four documents and 6.5% on the guidance manual. Quality gate thresholds are therefore only meaningful per backend, and must be recorded with one.
 
@@ -95,6 +95,29 @@ visibly scrambles, and the orientation guide's route is still a prediction.
 Software with no evidence behind it, including other Microsoft and Adobe
 products, falls to a default: try the text layer and let the gate decide.
 
+## Quality gate
+
+`daleel gate data/raw/` judges every page: can its text layer be trusted, or
+must the page go to OCR? It extracts text with pypdfium2, normalizes it, and
+checks its words against a web-scale Arabic word list, with thresholds
+calibrated against the hand-transcribed ground truth.
+
+| Document | Route | Pages | Trusted | Untrusted | No Arabic text | Agrees |
+|---|---|---|---|---|---|---|
+| Academic weeks 1448 | text layer | 3 | 3 | 0 | 0 | yes |
+| Guidance manual | OCR | 19 | 1 | 18 | 0 | yes |
+| Library services | OCR | 16 | 1 | 15 | 0 | yes |
+| Orientation 1446 | OCR | 13 | 1 | 12 | 0 | yes |
+| Student Guide 2025 | text layer | 86 | 82 | 2 | 2 | yes |
+
+The router predicts each route from metadata alone; the gate reaches the same
+conclusion for all five documents by reading every word.
+
+The gate still trusts two visibly broken pages, because their fragments are
+real entries in a web word list. That limitation, the evidence behind every
+threshold, and how to reproduce each number are in
+[`eval/results/gate_calibration.md`](eval/results/gate_calibration.md).
+
 ## Usage
 
 ```bash
@@ -104,6 +127,9 @@ daleel inventory data/raw/            # aligned table
 daleel inventory data/raw/ --json     # machine-readable
 daleel route data/raw/            # predicted extraction path per document
 daleel route data/raw/ --json
+python3 scripts/fetch_lexicon.py   # the gate's word list: 69 MB, not committed
+daleel gate data/raw/              # verdicts per document
+daleel gate data/raw/ --pages      # verdicts per page, with reasons
 ```
 
 ## Dependency note
