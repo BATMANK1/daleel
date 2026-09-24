@@ -16,7 +16,7 @@ Students need answers from 137 pages of Arabic regulation documents:
 Today the options are reading all of it, asking a classmate who may be wrong,
 or waiting for the registrar.
 
-An unsourced answer about your own academic standing is unusable — you cannot
+An unsourced answer about your own academic standing is unusable you cannot
 act on it and the registrar cannot confirm it. So **every answer this system
 gives carries a document, page and clause reference.** Citation is a hard
 functional requirement, not a feature.

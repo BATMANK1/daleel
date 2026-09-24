@@ -33,7 +33,7 @@ def _directory_error(path: Path) -> int | None:
 
 def _report_no_pdfs(path: Path) -> int:
     print(
-        f"error: no PDFs in {path} -- see data/README.md for how to obtain them",
+        f"error: no PDFs in {path}. See data/README.md for how to obtain them",
         file=sys.stderr,
     )
     return 1
@@ -68,7 +68,7 @@ def _add_inventory_parser(subparsers: argparse._SubParsersAction) -> None:
         description=(
             "Extract the text layer of every PDF in a directory and report the "
             "character classes that distinguish sound text from silent corruption. "
-            "Reports only -- pass/fail verdicts belong to the quality gate."
+            "Reports only: pass/fail verdicts belong to the quality gate."
         ),
     )
     parser.add_argument("path", type=Path, help="directory containing PDFs")

@@ -22,11 +22,11 @@ from daleel.ingest.inventory import (
     inspect_pdf,
 )
 
-# نظام ("system") in base letters -- what a student types.
+# نظام ("system") in base letters: what a student types.
 BASE_ARABIC = "\u0646\u0638\u0627\u0645"
 
-# The same word in Presentation Forms-B -- what the main guide's text layer
-# emits. Different codepoints, so no term overlap with the above.
+# The same word in Presentation Forms-B: what pdfplumber extracts from the main
+# guide. Different codepoints, so no term overlap with the above.
 PRESENTATION_ARABIC = "\ufee7\ufec8\ufe8e\ufee1"
 
 
@@ -61,8 +61,8 @@ def test_presform_ratio_is_share_of_arabic_only() -> None:
 
 
 def test_bidi_controls_counted_and_not_mistaken_for_letters() -> None:
-    # RTL embedding, text, pop directional formatting -- the pattern that
-    # surrounds every line of the main guide's extracted text.
+    # RTL embedding, text, pop directional formatting: the pattern pdftotext
+    # wraps around every line it extracts from the main guide.
     stats = analyse_text("\u202b" + BASE_ARABIC + "\u202c")
     assert stats.bidi_controls == 2
     assert stats.arabic_letters == 4

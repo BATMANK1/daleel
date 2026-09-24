@@ -18,3 +18,12 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      # Em dashes are banned from code and docs: use a colon, commas or a full stop.
+      - id: no-em-dashes
+        name: no em dashes
+        language: pygrep
+        entry: "\u2014"
+        types: [text]
