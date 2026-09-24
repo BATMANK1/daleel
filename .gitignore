@@ -1,4 +1,4 @@
-# Source documents NOT redistributable, see data/README.md
+# Source documents: not redistributable, see data/README.md
 data/raw/*
 !data/raw/.gitkeep
 data/interim/
