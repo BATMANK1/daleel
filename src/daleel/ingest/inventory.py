@@ -1,4 +1,19 @@
-# Measure what a PDF's text layer actually contains
+"""Measure what a PDF's text layer actually contains.
+
+This corpus has three distinct extraction failure modes and none of them
+announce themselves, so the decision about which extraction path to use -- and
+whether to trust a text layer at all -- has to rest on numbers rather than on
+glancing at a couple of pages.
+
+This module only reports. It deliberately passes no judgement: thresholds and
+pass/fail verdicts belong to the quality gate, and setting those thresholds
+before looking at the measurements would mean calibrating against assumptions
+instead of against the corpus.
+
+The character counting is kept separate from the PDF reading. `analyse_text`
+is a pure function over a string, which makes the part that matters unit
+testable without needing a PDF fixture.
+"""
 
 from __future__ import annotations
 
@@ -10,56 +25,29 @@ from pathlib import Path
 import pdfplumber
 
 from daleel.ingest.metadata import metadata_from
-
-"""Arabic Presentation Forms-A and -B hold the contextual glyph variants a
-renderer selects per letter position. A text layer emitting these has stored
-display forms rather than characters, so a query typed in base letters can
-never match it different codepoints entirely."""
-
-PRESENTATION_FORM_RANGES = ((0xFB50, 0xFDFF), (0xFE70, 0xFEFF))
+from daleel.normalize.arabic import (
+    BIDI_CONTROLS,
+    DIACRITIC_RANGES,
+    PRESENTATION_FORM_RANGES,
+    TATWEEL,
+    in_ranges,
+)
 
 # Base Arabic letters, and the extended set used for non-Arabic languages.
 ARABIC_LETTER_RANGES = ((0x0620, 0x064A), (0x0671, 0x06D3))
 
-# Harakat and other combining marks. Noise for retrieval; stripped later.
-ARABIC_DIACRITIC_RANGES = ((0x064B, 0x065F), (0x0670, 0x0670))
-
 ARABIC_INDIC_DIGIT_RANGES = ((0x0660, 0x0669), (0x06F0, 0x06F9))
 
-TATWEEL = 0x0640  # U+0640, the justification stroke
 REPLACEMENT_CHAR = 0xFFFD
-
-# Explicit bidirectional formatting characters. Meaningful to a renderer,
-# pure noise to an index.
-BIDI_CONTROLS = frozenset(
-    {
-        0x061C,  # Arabic letter mark
-        0x200E,  # LTR mark
-        0x200F,  # RTL mark
-        0x202A,  # LTR embedding
-        0x202B,  # RTL embedding
-        0x202C,  # pop directional formatting
-        0x202D,  # LTR override
-        0x202E,  # RTL override
-        0x2066,  # LTR isolate
-        0x2067,  # RTL isolate
-        0x2068,  # first strong isolate
-        0x2069,  # pop directional isolate
-    }
-)
 
 # Layout, not corruption: tab, newline, carriage return, and form feed,
 # which pdftotext writes after every page as a page separator.
 BENIGN_C0 = frozenset({0x09, 0x0A, 0x0C, 0x0D})
 
 
-def _in_ranges(codepoint: int, ranges: tuple[tuple[int, int], ...]) -> bool:
-    return any(low <= codepoint <= high for low, high in ranges)
-
-
 @dataclass
 class CharStats:
-    # Counts of the character classes that distinguish good text from damage
+    """Counts of the character classes that distinguish good text from damage."""
 
     chars: int = 0
     presentation_forms: int = 0
@@ -75,11 +63,12 @@ class CharStats:
 
     @property
     def arabic_total(self) -> int:
+        """Every character that is Arabic script, however it was encoded."""
         return self.presentation_forms + self.arabic_letters
 
     @property
     def presform_ratio(self) -> float:
-        # hare of Arabic stored as display forms. High means failure mode A
+        """Share of Arabic stored as display forms. High means failure mode A."""
         total = self.arabic_total
         return self.presentation_forms / total if total else 0.0
 
@@ -89,7 +78,7 @@ class CharStats:
 
     @property
     def c0_per_1k(self) -> float:
-        # Control characters where letters belong. High means failure mode C
+        """Control characters where letters belong. High means failure mode C."""
         return 1000 * self.c0_controls / self.chars if self.chars else 0.0
 
     def to_dict(self) -> dict[str, float | int]:
@@ -113,25 +102,29 @@ class CharStats:
 
 
 def analyse_text(text: str) -> CharStats:
-    # Count character classes in extracted text
+    """Count character classes in extracted text.
+
+    Pure function, no I/O. Every interesting property of the corpus is
+    measurable through this, which is why it is tested directly.
+    """
     stats = CharStats(chars=len(text))
 
     for char in text:
         codepoint = ord(char)
 
-        if codepoint == TATWEEL:
+        if char == TATWEEL:
             stats.tatweel += 1
         elif codepoint == REPLACEMENT_CHAR:
             stats.replacement_chars += 1
         elif codepoint in BIDI_CONTROLS:
             stats.bidi_controls += 1
-        elif _in_ranges(codepoint, PRESENTATION_FORM_RANGES):
+        elif in_ranges(codepoint, PRESENTATION_FORM_RANGES):
             stats.presentation_forms += 1
-        elif _in_ranges(codepoint, ARABIC_DIACRITIC_RANGES):
+        elif in_ranges(codepoint, DIACRITIC_RANGES):
             stats.arabic_diacritics += 1
-        elif _in_ranges(codepoint, ARABIC_INDIC_DIGIT_RANGES):
+        elif in_ranges(codepoint, ARABIC_INDIC_DIGIT_RANGES):
             stats.arabic_indic_digits += 1
-        elif _in_ranges(codepoint, ARABIC_LETTER_RANGES):
+        elif in_ranges(codepoint, ARABIC_LETTER_RANGES):
             stats.arabic_letters += 1
         elif codepoint < 0x20 and codepoint not in BENIGN_C0:
             stats.c0_controls += 1
@@ -145,7 +138,7 @@ def analyse_text(text: str) -> CharStats:
 
 @dataclass
 class PdfInventory:
-    # What one document's text layer looks like measured
+    """What one document's text layer looks like, measured."""
 
     path: Path
     pages: int
@@ -176,19 +169,15 @@ class PdfInventory:
         }
 
 
-def _metadata_value(metadata: dict | None, key: str) -> str:
-    if not metadata:
-        return ""
-    raw = metadata.get(key)
-    if raw is None:
-        return ""
-    if isinstance(raw, bytes):
-        raw = raw.decode("utf-8", errors="replace")
-    return str(raw).strip()
-
-
 def inspect_pdf(path: Path, font_sample_pages: int = 5, progress: bool = False) -> PdfInventory:
-    # Extract a PDF's text layer and measure it
+    """Extract a PDF's text layer and measure it.
+
+    Font names are collected from the first `font_sample_pages` pages only.
+    Reading `page.chars` materialises a dict per glyph, which on an 86-page
+    document costs hundreds of megabytes for a diagnostic that a handful of
+    pages answers just as well. The sample size is recorded so the number is
+    never mistaken for a full count.
+    """
     errors: list[str] = []
     parts: list[str] = []
     font_names: set[str] = set()
@@ -234,7 +223,7 @@ def inspect_pdf(path: Path, font_sample_pages: int = 5, progress: bool = False) 
 
 
 def inventory_dir(directory: Path, progress: bool = False) -> list[PdfInventory]:
-    # Inspect every PDF in a directory, in a stable order
+    """Inspect every PDF in a directory, in a stable order."""
     pdfs = sorted(p for p in directory.glob("*.pdf") if p.is_file())
     return [inspect_pdf(path, progress=progress) for path in pdfs]
 
@@ -253,7 +242,7 @@ _COLUMNS: tuple[tuple[str, str], ...] = (
 
 
 def format_table(inventories: list[PdfInventory]) -> str:
-    # Render the inventory as an aligned plain text table
+    """Render the inventory as an aligned plain-text table."""
     if not inventories:
         return "No PDFs found."
 

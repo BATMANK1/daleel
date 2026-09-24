@@ -19,20 +19,18 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Callable
 
-# The contextual glyph variants a renderer picks per letter position.
+# The contextual glyph variants a renderer picks per letter position. A text
+# layer that stores these has stored display forms rather than characters.
 PRESENTATION_FORM_RANGES = ((0xFB50, 0xFDFF), (0xFE70, 0xFEFF))
 # Within those, the presentation forms of the harakat themselves. NFKC turns an
 # isolated form into a space plus the mark, and the space must not survive.
 MARK_FORM_RANGE = (0xFE70, 0xFE7F)
 
-# Bidi controls, zero-width characters and the byte order mark: meaningful to a
-# renderer, noise to a comparison.
-INVISIBLES = frozenset(
+# Explicit bidirectional formatting characters: meaningful to a renderer, noise
+# to a comparison. The inventory counts them; normalization removes them.
+BIDI_CONTROLS = frozenset(
     {
         0x061C,  # Arabic letter mark
-        0x200B,  # zero width space
-        0x200C,  # zero width non-joiner
-        0x200D,  # zero width joiner
         0x200E,  # left-to-right mark
         0x200F,  # right-to-left mark
         0x202A,  # left-to-right embedding
@@ -44,6 +42,15 @@ INVISIBLES = frozenset(
         0x2067,  # right-to-left isolate
         0x2068,  # first strong isolate
         0x2069,  # pop directional isolate
+    }
+)
+# Everything a comparison should not see: the bidi controls, the zero-width
+# characters, and the byte order mark.
+INVISIBLES = BIDI_CONTROLS | frozenset(
+    {
+        0x200B,  # zero width space
+        0x200C,  # zero width non-joiner
+        0x200D,  # zero width joiner
         0xFEFF,  # byte order mark
     }
 )
@@ -63,7 +70,8 @@ TAA_MARBUTA, HAA = "\u0629", "\u0647"
 _ALEF_TABLE = str.maketrans(ALEF_VARIANTS, BARE_ALEF * len(ALEF_VARIANTS))
 
 
-def _in_ranges(codepoint: int, ranges: tuple[tuple[int, int], ...]) -> bool:
+def in_ranges(codepoint: int, ranges: tuple[tuple[int, int], ...]) -> bool:
+    """Whether a codepoint falls inside any of the inclusive ranges."""
     return any(low <= codepoint <= high for low, high in ranges)
 
 
@@ -85,7 +93,7 @@ def fold_presentation_forms(text: str) -> str:
     folded = []
     for ch in text:
         codepoint = ord(ch)
-        if not _in_ranges(codepoint, PRESENTATION_FORM_RANGES):
+        if not in_ranges(codepoint, PRESENTATION_FORM_RANGES):
             folded.append(ch)
             continue
         base = unicodedata.normalize("NFKC", ch)
@@ -102,7 +110,7 @@ def remove_tatweel(text: str) -> str:
 
 def strip_diacritics(text: str) -> str:
     """Remove harakat, tanween, shadda, sukun, superscript alef and Quranic marks."""
-    return "".join(ch for ch in text if not _in_ranges(ord(ch), DIACRITIC_RANGES))
+    return "".join(ch for ch in text if not in_ranges(ord(ch), DIACRITIC_RANGES))
 
 
 def unify_alef(text: str) -> str:
