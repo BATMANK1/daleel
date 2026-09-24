@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import Counter
 from collections.abc import Callable, Sequence
@@ -302,7 +303,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return _COMMANDS[args.command](args)
+    try:
+        status = _COMMANDS[args.command](args)
+        # Flush inside the try, so a reader that has already gone away is
+        # noticed here rather than as a traceback when the interpreter exits.
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # The reader stopped early, as `head` does. That is not a failure of
+        # this program, so point the rest of the output at /dev/null and stop,
+        # as the Python documentation recommends, with the conventional status 1.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return 1
+    return status
 
 
 if __name__ == "__main__":

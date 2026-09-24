@@ -7,6 +7,9 @@ output, argument parsing, and the error paths of both commands.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -161,3 +164,30 @@ def test_inventory_reads_with_pypdfium2_by_default() -> None:
 def test_inventory_rejects_an_unknown_backend() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(["inventory", "data/raw", "--backend", "pdftotext"])
+
+
+@pytest.mark.skipif(shutil.which("head") is None, reason="needs the head command")
+def test_output_cut_short_by_a_pipe_ends_quietly(tmp_path: Path) -> None:
+    # A real pipe into a real `head`, with enough output to overflow the pipe's
+    # buffer, so the reader is gone before the writer has finished.
+    script = tmp_path / "flood.py"
+    script.write_text(
+        "import sys\n"
+        "from daleel import cli\n"
+        "def flood(args):\n"
+        "    for number in range(200_000):\n"
+        "        print('line', number)\n"
+        "    return 0\n"
+        "cli._COMMANDS['route'] = flood\n"
+        "sys.exit(cli.main(['route', '.']))\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        f'"{sys.executable}" "{script}" | head -n 1',
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.stdout == "line 0\n"
+    assert "Traceback" not in result.stderr
