@@ -6,7 +6,7 @@ Answers questions about Royal Commission for Jubail and Yanbu college
 regulations in Arabic, with the exact clause cited.
 
 > **Status: in development.** This README grows with the repository.
-> No result is published here until it has been measured see
+> No result is published here until it has been measured. See
 > [Results](#results).
 
 ## The problem
@@ -16,7 +16,7 @@ Students need answers from 137 pages of Arabic regulation documents:
 Today the options are reading all of it, asking a classmate who may be wrong,
 or waiting for the registrar.
 
-An unsourced answer about your own academic standing is unusable you cannot
+An unsourced answer about your own academic standing is unusable: you cannot
 act on it and the registrar cannot confirm it. So **every answer this system
 gives carries a document, page and clause reference.** Citation is a hard
 functional requirement, not a feature.
@@ -24,7 +24,8 @@ functional requirement, not a feature.
 ## Why this is not a "chat with your PDF" project
 
 Measuring the corpus before building anything turned up extraction damage that
-no naive pipeline would notice. `daleel inventory data/raw/` reports it:
+no naive pipeline would notice. `daleel inventory data/raw/` reports it, and
+`--backend pdfplumber` gives the first presentation-form column:
 
 | Document | Producer | Pages | Chars per page | Presentation forms, pdfplumber | Presentation forms, pypdfium2 |
 |---|---|---|---|---|---|
@@ -37,19 +38,20 @@ no naive pipeline would notice. `daleel inventory data/raw/` reports it:
 Three distinct failure modes sit behind those numbers:
 
 1. **Presentation-form substitution.** In the two design-tool exports, most
-   Arabic is stored as Unicode Arabic Presentation Forms the contextual
-   glyph variants a renderer picks per letter position rather than as base
-   letters. A student typing `نظام` cannot match an index holding `ﻧﻈﺎم`:
-   different codepoints, so zero term overlap.
+   Arabic extracts as Unicode Arabic Presentation Forms, the contextual glyph
+   variants a renderer picks per letter position, rather than as base letters,
+   at least through pdfplumber and pdftotext (see below). A student typing
+   `نظام` cannot match an index holding `ﻧﻈﺎم`: different codepoints, so zero
+   term overlap.
 2. **Silently wrong text.** The Word and PowerPoint exports report 0%
    presentation forms and look clean by every structural measure, but the text
    is wrong: `رؤيتنا` ("our vision") extracts as `وؤيتنا`, with letters
    substituted and dropped. These are valid Arabic codepoints that are not
    real words, so nothing structural can flag them. Verified by rasterising
    pages and reading them against the text layer.
-3. **Low text density.** The PowerPoint and orientation documents yield 200 to
-   300 characters per page, meaning most of their content is graphics and
-   needs OCR regardless of whether the extracted text is sound.
+3. **Low text density.** The PowerPoint and orientation documents yield about
+   200 to 320 characters per page, meaning most of their content is graphics
+   and needs OCR regardless of whether the extracted text is sound.
 
 ### The failure signature depends on the extraction backend
 
@@ -63,13 +65,32 @@ All five documents, read with pdfplumber and with poppler's `pdftotext`:
 | Library services | 4,924 | 5,624 | 0% | 121.3 |
 | Orientation 1446 | 2,595 | 3,089 | 0% | 139.9 |
 
-The presentation-form ratio agrees between these two, but a third extractor, pypdfium2, returns base letters for the same glyphs, so the ratio describes how an extractor maps glyphs rather than the PDF alone. Word order differs too: pdfplumber writes Arabic in visual order, spelling every word backwards, which is why the pipeline extracts text with pypdfium2 ([calibration](eval/results/gate_calibration.md)).
+The presentation-form ratio agrees between these two, but a third extractor,
+pypdfium2, returns base letters for the same glyphs, so the ratio describes how
+an extractor maps glyphs rather than the PDF alone. Word order differs too:
+pdfplumber writes Arabic in visual order, spelling every word backwards, which
+is why the pipeline extracts text with pypdfium2
+([calibration](eval/results/gate_calibration.md)).
 
-`pdftotext` also writes a form feed after every page. Once those and its bidi marks are subtracted, the two backends agree on text length within 2% on four documents and 6.5% on the guidance manual. Quality gate thresholds are therefore only meaningful per backend, and must be recorded with one.
+`pdftotext` also writes a form feed after every page. Once those and its bidi
+marks are subtracted, the two backends agree on text length within 2% on four
+documents and 6.5% on the guidance manual. Quality gate thresholds are
+therefore only meaningful per backend, and must be recorded with one.
 
 ### Provenance
 
-The 1448 academic calendar first added to the corpus turned out, on reading its footer, to be an unofficial student redesign that states it does not represent the Royal Commission. It was replaced with the official calendar. The unofficial file was also the only source of real control-character corruption seen so far, and of a large unexplained disagreement in character counts between the two backends. Both left the corpus with it.
+The 1448 academic calendar first added to the corpus turned out, on reading its
+footer, to be an unofficial student redesign that states it does not represent
+the Royal Commission. It was replaced with the official calendar. The
+unofficial file was also the only source of real control-character corruption
+seen so far, and of a large unexplained disagreement in character counts
+between the two backends. Both left the corpus with it.
+
+A second derivative turned up later: an AI-generated `.ics` version of the
+full-year calendar, identified by its metadata. All 37 of its dates match the
+official calendar, but it rewrote one summer deadline from the end of drop and
+add to the end of add, which would mislead a student. It is used only to
+cross-check the calendar ground truth's dates, and is never cited.
 
 ## Extraction routing
 
@@ -89,11 +110,12 @@ A route is a prior, not a verdict. The quality gate still checks every
 document, so a wrong prediction costs time and never correctness.
 
 The rules come from five documents, and each rule in the code names the
-documents it rests on. Of the three Microsoft documents, only the guidance
-manual has been checked against its rendered page; the library guide's text
-visibly scrambles, and the orientation guide's route is still a prediction.
-Software with no evidence behind it, including other Microsoft and Adobe
-products, falls to a default: try the text layer and let the gate decide.
+documents it rests on. All three Microsoft documents have since been checked
+against hand-transcribed ground truth, and all three text layers are broken:
+their words match the page at 5%, 50% and 33% precision. Every route held,
+including the orientation guide's, which had been a prediction only. Software
+with no evidence behind it, including other Microsoft and Adobe products,
+falls to a default: try the text layer and let the gate decide.
 
 ## Quality gate
 
@@ -123,29 +145,35 @@ threshold, and how to reproduce each number are in
 ```bash
 uv venv --python 3.12 && source .venv/bin/activate
 uv pip install -e ".[dev]"
-daleel inventory data/raw/            # aligned table
-daleel inventory data/raw/ --json     # machine-readable
-daleel route data/raw/            # predicted extraction path per document
-daleel route data/raw/ --json
-python3 scripts/fetch_lexicon.py   # the gate's word list: 69 MB, not committed
-daleel gate data/raw/              # verdicts per document
-daleel gate data/raw/ --pages      # verdicts per page, with reasons
+python3 scripts/fetch_lexicon.py                  # the gate's word list: 69 MB, not committed
+daleel inventory data/raw/                        # text-layer measurements, via pypdfium2
+daleel inventory data/raw/ --backend pdfplumber   # the same, via pdfplumber, for comparison
+daleel route data/raw/                            # predicted extraction path per document
+daleel gate data/raw/                             # verdicts per document
+daleel gate data/raw/ --pages                     # verdicts per page, with reasons
+pytest                                            # the test suite
 ```
+
+Every `daleel` command also accepts `--json`. `python3 scripts/calibrate_gate.py`
+reproduces every number in the gate's calibration, given the hand-transcribed
+ground truth, which is not redistributed.
 
 ## Dependency note
 
-Text extraction uses **pdfplumber** (MIT) rather than PyMuPDF. PyMuPDF is
-faster and exposes the same character geometry, but it is (AGPL) licensed, which
-is a blanket disqualifier at many organisations and would force this
-repository's own licence to match. On a 137 page corpus the speed difference is
-irrelevant, and pdfplumber exposes geometry at character rather than word
-level which the table reconstruction work needs anyway.
+Text extraction uses **pypdfium2** (BSD-3-Clause or Apache-2.0), chosen by
+measurement: pdfplumber writes Arabic in visual order, spelling every word
+backwards (see [the calibration](eval/results/gate_calibration.md)).
+**pdfplumber** (MIT) remains for character geometry, which the table
+reconstruction work needs, and as a comparison backend for the inventory.
+PyMuPDF was ruled out because it is AGPL-licensed, a blanket disqualifier at
+many organisations that would force this repository's own licence to match.
 
 ## Results
 
-Extraction inventory above (table T1). Retrieval, OCR and arm-comparison
-tables land here as that work completes. Nothing is published here before it
-is measured.
+The extraction inventory above (table T1), and the quality gate's calibration
+in [`eval/results/gate_calibration.md`](eval/results/gate_calibration.md).
+Retrieval, OCR and arm-comparison tables land here as that work completes.
+Nothing is published here before it is measured.
 
 ## Licence
 
