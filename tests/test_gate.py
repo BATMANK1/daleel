@@ -7,7 +7,9 @@ threshold ever moves, it names the page that changed side.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +20,7 @@ from daleel.ingest.gate import (
     RULES,
     Verdict,
     decide,
+    gate_document,
     load_gate_lexicon,
 )
 from daleel.ingest.quality import PageQuality
@@ -125,3 +128,10 @@ def test_gate_lexicon_uses_the_calibrated_cutoff(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(gate, "load_lexicon", fake_load)
     load_gate_lexicon()
     assert calls == [LEXICON_CUTOFF]
+
+
+def test_every_page_of_a_document_gets_a_numbered_verdict(make_pdf: Callable[..., Path]) -> None:
+    # Latin text and a blank page: neither holds Arabic words to judge.
+    verdicts = gate_document(make_pdf(["first page", ""]), frozenset())
+    assert [v.page for v in verdicts] == [1, 2]
+    assert {v.decision.verdict for v in verdicts} == {Verdict.NO_ARABIC_TEXT}
