@@ -16,6 +16,7 @@ import pytest
 from daleel.ingest import gate
 from daleel.ingest.gate import (
     LEXICON_CUTOFF,
+    MIN_ARABIC_WORDS,
     MIN_TOKEN_VALIDITY,
     RULES,
     Verdict,
@@ -88,6 +89,24 @@ def test_every_failed_rule_is_recorded_not_just_the_first() -> None:
     assert set(decision.rejected_by) == {"cid_placeholders", "token_validity"}
 
 
+def test_a_footer_alone_is_not_enough_to_trust_a_page() -> None:
+    # guidance_manual page 18: its 3-word footer is perfectly valid, and its
+    # content is missing from the text layer entirely.
+    decision = decide(replace(SOUND, arabic_tokens=3, token_validity=1.0))
+    assert decision.verdict == Verdict.UNTRUSTED
+    assert decision.rejected_by == ("too_few_words",)
+
+
+def test_the_minimum_number_of_words_is_enough() -> None:
+    decision = decide(replace(SOUND, arabic_tokens=MIN_ARABIC_WORDS))
+    assert decision.verdict == Verdict.TRUSTED
+
+
+def test_every_calibration_page_clears_the_word_minimum() -> None:
+    # The smallest calibration page had 52 Arabic words.
+    assert MIN_ARABIC_WORDS < 52
+
+
 def test_a_page_without_arabic_words_has_nothing_to_judge() -> None:
     decision = decide(replace(SOUND, arabic_tokens=0, token_validity=None))
     assert decision.verdict == Verdict.NO_ARABIC_TEXT
@@ -109,7 +128,7 @@ def test_decision_as_plain_data() -> None:
 def test_every_rule_states_its_meaning_and_evidence() -> None:
     for rule in RULES:
         assert rule.meaning
-        assert rule.evidence.startswith(("measured", "principle"))
+        assert rule.evidence.startswith(("measured", "principle", "judgement"))
 
 
 def test_rule_names_are_unique() -> None:
