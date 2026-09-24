@@ -1,9 +1,10 @@
 """Decide whether a page's text layer can be trusted.
 
 daleel.ingest.quality measures; this module decides. Each rule names what
-failing it means and where its threshold comes from, marked either as
-measured, calibrated against hand-transcribed ground truth, or as a principle,
-true by definition and needing no calibration.
+failing it means and where its threshold comes from, marked as measured
+(calibrated against hand-transcribed ground truth), principle (true by
+definition, needing no calibration) or judgement (a choice informed by the
+evidence but not derived from it).
 
 The calibration behind the measured rule used five pages, two with sound text
 layers and three broken ones, with text extracted by pypdfium2 and a lexicon
@@ -27,6 +28,9 @@ from daleel.ingest.quality import PageQuality, measure
 # sits above that gap's midpoint on purpose: passing a broken page puts wrong
 # words in front of a reader, while rejecting a sound one costs an OCR run.
 MIN_TOKEN_VALIDITY = 0.95
+# Validity over a handful of words says little. Every calibration page had at
+# least 52 Arabic words, so this changes no calibrated verdict.
+MIN_ARABIC_WORDS = 20
 LEXICON_CUTOFF = 1_000
 
 
@@ -50,6 +54,15 @@ RULES: tuple[GateRule, ...] = (
         fails=lambda q: q.arabic_tokens == 0,
         meaning="the text layer holds no Arabic words at all",
         evidence="principle: with no words there is nothing to judge",
+    ),
+    GateRule(
+        name="too_few_words",
+        fails=lambda q: 0 < q.arabic_tokens < MIN_ARABIC_WORDS,
+        meaning=f"fewer than {MIN_ARABIC_WORDS} Arabic words, too few for validity to mean much",
+        evidence=(
+            "judgement: below every calibration page (52 or more words); the whole-corpus "
+            "run showed a page passing on its 3-word footer while its content was missing"
+        ),
     ),
     GateRule(
         name="cid_placeholders",
