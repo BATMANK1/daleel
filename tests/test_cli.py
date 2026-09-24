@@ -152,3 +152,12 @@ def test_gate_runs_end_to_end(
     out = capsys.readouterr().out
     assert "guide.pdf" in out
     assert "no arabic text" in out
+
+
+def test_inventory_reads_with_pypdfium2_by_default() -> None:
+    assert build_parser().parse_args(["inventory", "data/raw"]).backend == "pypdfium2"
+
+
+def test_inventory_rejects_an_unknown_backend() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["inventory", "data/raw", "--backend", "pdftotext"])

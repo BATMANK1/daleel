@@ -26,13 +26,13 @@ functional requirement, not a feature.
 Measuring the corpus before building anything turned up extraction damage that
 no naive pipeline would notice. `daleel inventory data/raw/` reports it:
 
-| Document | Producer | Pages | Chars | ch/page | Presentation forms |
+| Document | Producer | Pages | Chars per page | Presentation forms, pdfplumber | Presentation forms, pypdfium2 |
 |---|---|---|---|---|---|
-| Student Guide 2025 | PDFium | 86 | 109,280 | 1,271 | **77%** |
-| Academic weeks 1448 | Adobe PDF Library 18.00 | 3 | 4,811 | 1,604 | **71%** |
-| Guidance manual | Word 2019 | 19 | 10,629 | 559 | 0% |
-| Library services | PowerPoint 2019 | 16 | 4,924 | 308 | 0% |
-| Orientation 1446 | Word 2019 | 13 | 2,595 | 200 | 0% |
+| Student Guide 2025 | PDFium | 86 | 1,297 | 77% | 0% |
+| Academic weeks 1448 | Adobe PDF library 18.00 | 3 | 1,637 | 71% | 0% |
+| Guidance manual | Microsoft® Word 2019 | 19 | 566 | 0% | 0% |
+| Library services | Microsoft® PowerPoint® 2019 | 16 | 320 | 0% | 0% |
+| Orientation 1446 | Microsoft® Word 2019 | 13 | 202 | 0% | 0% |
 
 Three distinct failure modes sit behind those numbers:
 

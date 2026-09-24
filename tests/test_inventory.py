@@ -1,13 +1,25 @@
-# Tests for text layer measurement
+"""Tests for text-layer measurement.
+
+Arabic appears here as explicit \\u escapes rather than literal script. Three
+reasons: the tests are about specific codepoints, so naming them is the point;
+a reader can see exactly which class is under test without trusting their
+editor; and bidirectional rendering makes mixed-direction source lines
+genuinely hard to read correctly.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from pathlib import Path
+
 import pytest
 
+from daleel.ingest.extract import BACKENDS
 from daleel.ingest.inventory import (
     CharStats,
     analyse_text,
     format_table,
+    inspect_pdf,
 )
 
 # نظام ("system") in base letters -- what a student types.
@@ -126,3 +138,19 @@ def test_form_feed_is_page_separator_not_corruption() -> None:
     # character per page, on all five documents.
     stats = analyse_text("page one\fpage two\f")
     assert stats.c0_controls == 0
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_an_inventory_records_the_backend_that_read_it(
+    make_pdf: Callable[..., Path], backend: str
+) -> None:
+    inventory = inspect_pdf(make_pdf(["first page", "second page"]), backend=backend)
+    assert inventory.backend == backend
+    assert inventory.to_dict()["backend"] == backend
+    assert inventory.pages == 2
+    assert inventory.stats.latin_letters == len("firstpagesecondpage")
+
+
+def test_the_table_names_the_backend(make_pdf: Callable[..., Path]) -> None:
+    table = format_table([inspect_pdf(make_pdf(["first page"]))])
+    assert "Text layers read with pypdfium2." in table.splitlines()

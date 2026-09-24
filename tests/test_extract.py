@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from daleel.ingest.extract import page_text, page_texts
+from daleel.ingest import extract
+from daleel.ingest.extract import BACKENDS, page_text, page_texts
 
 
 @pytest.fixture
@@ -52,3 +53,47 @@ def test_line_breaks_are_newlines(make_pdf: Callable[..., Path]) -> None:
     text = page_text(make_pdf(["upper line\nlower line"]), 1)
     assert "\r" not in text
     assert text.split("\n") == ["upper line", "lower line"]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_both_backends_read_latin_text_alike(three_pages: Path, backend: str) -> None:
+    # Arabic is where they differ; see eval/results/gate_calibration.md.
+    assert page_texts(three_pages, backend) == ["first page", "GPA 3.75 (DN)", ""]
+
+
+def test_an_unknown_backend_is_an_error(three_pages: Path) -> None:
+    with pytest.raises(ValueError, match="unknown backend"):
+        page_texts(three_pages, "pdftotext")
+
+
+def test_an_unreadable_page_is_recorded_and_read_as_empty(
+    three_pages: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = extract._text_of
+
+    def failing_on_page_two(document, index):
+        if index == 1:
+            raise RuntimeError("damaged content stream")
+        return real(document, index)
+
+    monkeypatch.setattr(extract, "_text_of", failing_on_page_two)
+    errors: list[str] = []
+    assert page_texts(three_pages, errors=errors) == ["first page", "", ""]
+    assert errors == ["page 2: RuntimeError: damaged content stream"]
+
+
+def test_without_an_error_list_an_unreadable_page_raises(
+    three_pages: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def always_failing(document, index):
+        raise RuntimeError("damaged content stream")
+
+    monkeypatch.setattr(extract, "_text_of", always_failing)
+    with pytest.raises(RuntimeError):
+        page_texts(three_pages)
+
+
+def test_progress_is_reported_after_every_page(three_pages: Path) -> None:
+    calls: list[tuple[int, int]] = []
+    page_texts(three_pages, on_page=lambda number, count: calls.append((number, count)))
+    assert calls == [(1, 3), (2, 3), (3, 3)]
