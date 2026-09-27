@@ -118,7 +118,8 @@ college's site showed two documents bound together: the site publishes the
 both are in the corpus as published. A copy of the conduct code saved through a
 browser's print dialog was likewise replaced with the original download. The
 student guide, which the site does not offer for download, comes from the
-Student Affairs department's Telegram channel.
+Student Affairs department's Telegram channel, where the post has since been
+removed.
 
 Every document's SHA-256 is recorded in [`data/SHA256SUMS`](data/SHA256SUMS),
 and `sha256sum -c data/SHA256SUMS` checks a local copy against it.
@@ -230,6 +231,6 @@ MIT, see [LICENSE](LICENSE).
 
 ## Source documents
 
-The source documents are internal college publications and are not
+The source documents are college publications and are not
 redistributed here. See [`data/README.md`](data/README.md) for how to obtain
 them.
