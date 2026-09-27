@@ -19,23 +19,27 @@ def outcome(*, producer: str, creator: str) -> tuple[ExtractionPath, ExpectedFai
 
 
 @pytest.mark.parametrize(
-    ("producer", "creator", "path", "failure"),
+    ("producer", "creator", "path", "failure", "matched"),
     [
-        # student_guide_2025.pdf: 77% presentation forms.
+        # student_guide_2025.pdf: 77% presentation forms through pdfplumber.
+        # PDFium is the PDF viewer that wrote this copy before Student Affairs
+        # posted it, not the design tool behind it.
         (
             "PDFium",
             "PDFium",
             ExtractionPath.TEXT_LAYER,
             ExpectedFailure.PRESENTATION_FORMS,
+            "producer",
         ),
-        # academic_weeks_1448.pdf, the official calendar: 71% presentation forms.
-        # Note the lowercase "library": a real document already needs
-        # case-insensitive matching, not just a hypothetical one.
+        # academic_weeks_1448.pdf, the official calendar: 71% presentation forms
+        # through pdfplumber. Note the lowercase "library": a real document
+        # already needs case-insensitive matching, not just a hypothetical one.
         (
             "Adobe PDF library 18.00",
             "Adobe Illustrator 30.4 (Windows)",
             ExtractionPath.TEXT_LAYER,
             ExpectedFailure.PRESENTATION_FORMS,
+            "producer",
         ),
         # guidance_manual.pdf: 0% presentation forms, yet words come out wrong.
         (
@@ -43,6 +47,7 @@ def outcome(*, producer: str, creator: str) -> tuple[ExtractionPath, ExpectedFai
             "Microsoft® Word 2019",
             ExtractionPath.OCR,
             ExpectedFailure.LOSSY_SUBSTITUTION,
+            "producer",
         ),
         # library_services_2024_2025.pdf: 0% presentation forms, scrambled text.
         (
@@ -50,16 +55,67 @@ def outcome(*, producer: str, creator: str) -> tuple[ExtractionPath, ExpectedFai
             "Microsoft® PowerPoint® 2019",
             ExtractionPath.OCR,
             ExpectedFailure.LOSSY_SUBSTITUTION,
+            "producer",
         ),
-        # orientation_1446.pdf is left out on purpose. It has the same producer
-        # as guidance_manual, but its lossy substitution is still a prediction
-        # nobody has checked against ground truth. Add it once that's done.
+        # orientation_1446.pdf: at first a prediction only, since it shares the
+        # guidance manual's producer. Ground truth has since confirmed it: its
+        # words match the page at 33% precision.
+        (
+            "Microsoft® Word 2019",
+            "Microsoft® Word 2019",
+            ExtractionPath.OCR,
+            ExpectedFailure.LOSSY_SUBSTITUTION,
+            "producer",
+        ),
+        # student_conduct_code.pdf: 75% presentation forms through pdfplumber.
+        # Out of sample: the rule was written from library version 18.00.
+        (
+            "Adobe PDF library 15.00",
+            "Adobe Illustrator 24.0 (Windows)",
+            ExtractionPath.TEXT_LAYER,
+            ExpectedFailure.PRESENTATION_FORMS,
+            "producer",
+        ),
+        # student_charter.pdf: 76% presentation forms through pdfplumber. Also
+        # out of sample, with a creator a decade older than any the rule saw.
+        (
+            "Adobe PDF library 15.00",
+            "Adobe Illustrator CC 2017 (Windows)",
+            ExtractionPath.TEXT_LAYER,
+            ExpectedFailure.PRESENTATION_FORMS,
+            "producer",
+        ),
+        # organizational_regulations.pdf, as downloaded from the college's site,
+        # carries no metadata at all, so it takes the default. The gate trusts
+        # 43 of its 44 pages that have a text layer.
+        (
+            "",
+            "",
+            ExtractionPath.TEXT_LAYER,
+            ExpectedFailure.UNKNOWN,
+            None,
+        ),
+        # student_portal_guide.pdf was compressed by an online tool before it
+        # was published, which replaced its metadata. It takes the default too,
+        # and the gate trusts 37 of its 41 pages that have a text layer.
+        (
+            "GPL Ghostscript 10.00.0",
+            "pdfresizer.com",
+            ExtractionPath.TEXT_LAYER,
+            ExpectedFailure.UNKNOWN,
+            None,
+        ),
     ],
     ids=[
         "student_guide",
         "academic_weeks_official",
         "guidance_manual",
         "library_services",
+        "orientation",
+        "student_conduct_code",
+        "student_charter",
+        "organizational_regulations",
+        "student_portal_guide",
     ],
 )
 def test_corpus_documents_route_as_measured(
@@ -67,9 +123,9 @@ def test_corpus_documents_route_as_measured(
     creator: str,
     path: ExtractionPath,
     failure: ExpectedFailure,
+    matched: str | None,
 ) -> None:
-    # Every document in the current corpus names its software in the producer.
-    assert outcome(producer=producer, creator=creator) == (path, failure, "producer")
+    assert outcome(producer=producer, creator=creator) == (path, failure, matched)
 
 
 def test_creator_is_the_fallback_when_producer_is_unrecognised() -> None:
@@ -108,8 +164,8 @@ def test_unknown_producer_defaults_to_text_layer() -> None:
 
 
 def test_empty_metadata_defaults_to_text_layer() -> None:
-    # Synthetic but realistic: PDFs can omit both fields, and the inventory
-    # reads a missing field as an empty string.
+    # Real: organizational_regulations.pdf, as downloaded from the college's
+    # site, omits both fields, and missing fields are read as empty strings.
     assert outcome(producer="", creator="") == (
         ExtractionPath.TEXT_LAYER,
         ExpectedFailure.UNKNOWN,
