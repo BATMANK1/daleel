@@ -193,11 +193,15 @@ _GATE_PAGE_COLUMNS: tuple[tuple[str, str], ...] = (
 def gate_summary(name: str, route_path: str, verdicts: Sequence[PageVerdict]) -> dict:
     """One document's verdicts counted, and whether they agree with the router.
 
-    The gate says "text_layer" when more than half of the pages are trusted.
+    The gate says "text_layer" when more than half of the pages whose text layer
+    holds Arabic words are trusted. Pages with no Arabic in their text layer,
+    such as covers drawn as shapes, say nothing about whether the layer works:
+    they are counted in their own column, and go to OCR regardless.
     """
     counts = Counter(verdict.decision.verdict for verdict in verdicts)
     trusted = counts[Verdict.TRUSTED]
-    gate_path = "text_layer" if trusted * 2 > len(verdicts) else "ocr"
+    with_arabic = len(verdicts) - counts[Verdict.NO_ARABIC_TEXT]
+    gate_path = "text_layer" if trusted * 2 > with_arabic else "ocr"
     return {
         "file": name,
         "route": route_path,

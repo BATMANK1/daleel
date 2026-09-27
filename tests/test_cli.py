@@ -113,9 +113,32 @@ def test_gate_summary_counts_verdicts_and_checks_the_route() -> None:
     assert summary["trusted"] == 2
     assert summary["untrusted"] == 1
     assert summary["no_arabic_text"] == 1
-    # Two of four trusted is not more than half, so the gate says OCR.
-    assert summary["gate_path"] == "ocr"
-    assert summary["agrees"] == "no"
+    # Two of the three pages with Arabic text are trusted, so the gate says text
+    # layer. The page with none is counted, but says nothing about the layer.
+    assert summary["gate_path"] == "text_layer"
+    assert summary["agrees"] == "yes"
+
+
+def test_pages_without_arabic_text_do_not_count_against_the_layer() -> None:
+    # student_charter.pdf: its cover, a photo, two title pages and its back cover
+    # have no Arabic in their text layer; its three pages of content are trusted.
+    pages = [_page(n, None, tokens=0) for n in (1, 2, 3, 7, 8)]
+    pages += [_page(n, 1.0) for n in (4, 5, 6)]
+    summary = gate_summary("student_charter.pdf", "text_layer", pages)
+    assert (summary["trusted"], summary["no_arabic_text"]) == (3, 5)
+    assert (summary["gate_path"], summary["agrees"]) == ("text_layer", "yes")
+
+
+def test_gate_says_ocr_when_most_pages_with_text_are_untrusted() -> None:
+    # guidance_manual.pdf: one trusted page among nineteen.
+    pages = [_page(1, 1.0)] + [_page(n, 0.5) for n in range(2, 20)]
+    summary = gate_summary("guidance_manual.pdf", "ocr", pages)
+    assert (summary["gate_path"], summary["agrees"]) == ("ocr", "yes")
+
+
+def test_a_document_without_arabic_text_goes_to_ocr() -> None:
+    pages = [_page(n, None, tokens=0) for n in (1, 2)]
+    assert gate_summary("scan.pdf", "text_layer", pages)["gate_path"] == "ocr"
 
 
 def test_gate_summary_agrees_when_most_pages_are_trusted() -> None:
