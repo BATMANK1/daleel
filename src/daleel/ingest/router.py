@@ -1,6 +1,6 @@
-# Route each PDF to the extraction path most likely to work, from its metadata.
+"""Route each PDF to the extraction path most likely to work, from its metadata.
 
-"""A route is a prior, not a verdict. It predicts which extraction path to try
+A route is a prior, not a verdict. It predicts which extraction path to try
 first and which failure to expect, from the software that produced the PDF.
 The quality gate still checks every document, so a wrong prediction costs time
 and never correctness.
@@ -54,7 +54,10 @@ RULES: tuple[Rule, ...] = (
         pattern=re.compile(r"\bpdfium\b"),
         path=ExtractionPath.TEXT_LAYER,
         expected_failure=ExpectedFailure.PRESENTATION_FORMS,
-        evidence="student_guide_2025.pdf: 77% presentation forms",
+        evidence=(
+            "student_guide_2025.pdf: 77% presentation forms through pdfplumber; PDFium is "
+            "the PDF viewer that wrote this copy, not the design tool behind it"
+        ),
     ),
     Rule(
         name="adobe",
@@ -62,8 +65,10 @@ RULES: tuple[Rule, ...] = (
         path=ExtractionPath.TEXT_LAYER,
         expected_failure=ExpectedFailure.PRESENTATION_FORMS,
         evidence=(
-            "academic_weeks_1448.pdf: 71% presentation forms, matched on producer; "
-            "the unofficial calendar: 61%, matched on creator"
+            "presentation forms through pdfplumber: academic_weeks_1448.pdf 71% (library "
+            "18.00); student_conduct_code.pdf 75% and student_charter.pdf 76% (library 15.00, "
+            "a version the rule was not built from), all matched on producer; the unofficial "
+            "calendar 61%, matched on creator"
         ),
     ),
     Rule(
@@ -72,8 +77,8 @@ RULES: tuple[Rule, ...] = (
         path=ExtractionPath.OCR,
         expected_failure=ExpectedFailure.LOSSY_SUBSTITUTION,
         evidence=(
-            "guidance_manual.pdf: letters substituted, verified against the page; "
-            "library_services_2024_2025.pdf: scrambled text"
+            "ground truth: the words of guidance_manual.pdf, library_services_2024_2025.pdf "
+            "and orientation_1446.pdf match their pages at 5%, 50% and 33% precision"
         ),
     ),
 )
