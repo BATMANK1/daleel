@@ -3,7 +3,7 @@
 
     python3 scripts/calibrate_gate.py
 
-Four sections, each computed from the PDFs, the ground truth and the lexicon:
+Five sections, each computed from the PDFs, the ground truth and the lexicon:
 
 1. Backends: how well each extractor's text matches the ground truth, both the
    Arabic words and every run of digits or Latin letters the page prints.
@@ -15,6 +15,9 @@ Four sections, each computed from the PDFs, the ground truth and the lexicon:
    (the ceiling), and how well each cutoff separates sound pages from broken.
 4. Lexicon noise: how often the extraction errors found during transcription
    occur in the raw frequency list.
+5. Other scripts: every page of every document in data/raw whose text layer
+   holds letters from neither Arabic nor Latin, the mark of glyph numbers read
+   as character codes, with the gate's verdict on it.
 
 Ground truth never leaves this machine, so this runs locally and only its
 numbers are published.
@@ -28,6 +31,7 @@ import io
 import re
 import shutil
 import subprocess
+import unicodedata
 import zipfile
 from collections import Counter
 from collections.abc import Callable
@@ -35,7 +39,8 @@ from pathlib import Path
 
 import pdfplumber
 
-from daleel.ingest.extract import page_text
+from daleel.ingest.extract import page_text, page_texts
+from daleel.ingest.gate import decide
 from daleel.ingest.lexicon import LEXICON_MEMBER, LEXICON_ZIP, load_lexicon, read_frequency_list
 from daleel.ingest.metadata import read_metadata
 from daleel.ingest.quality import arabic_tokens, measure, single_letter_share, token_validity
@@ -225,6 +230,36 @@ def section_lexicon_noise() -> None:
         print(f"   {found[word]:>7,}  {escaped}  ({note})")
 
 
+def foreign_letters(text: str) -> int:
+    """Letters from neither Arabic nor Latin, plus private-use characters."""
+    count = 0
+    for ch in text:
+        category = unicodedata.category(ch)
+        if category == "Co" or (
+            category.startswith("L")
+            and not unicodedata.name(ch, "").startswith(("ARABIC", "LATIN"))
+        ):
+            count += 1
+    return count
+
+
+def section_other_scripts(lexicon: frozenset[str]) -> None:
+    print("5. OTHER SCRIPTS: pages whose text layer holds letters from neither Arabic nor Latin")
+    flagged = total = 0
+    for pdf in sorted(RAW.glob("*.pdf")):
+        for number, text in enumerate(page_texts(pdf), start=1):
+            total += 1
+            letters = foreign_letters(text)
+            if letters:
+                flagged += 1
+                quality = measure(text, lexicon)
+                print(
+                    f"   {pdf.name} page {number}: {letters} such letters, "
+                    f"{quality.arabic_tokens} Arabic words, verdict {decide(quality).verdict}"
+                )
+    print(f"   {flagged} of {total} pages")
+
+
 def main() -> int:
     print(f"versions: {versions()}\n")
     section_backends()
@@ -232,6 +267,8 @@ def main() -> int:
     rows = section_proxies(lexicons)
     section_cutoffs(rows)
     section_lexicon_noise()
+    print()
+    section_other_scripts(lexicons[1_000])
     return 0
 
 

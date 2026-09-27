@@ -7,10 +7,12 @@ computed from the extracted text alone. This document records how those
 proxies were checked against hand-transcribed ground truth, which decisions
 followed, and what the gate still gets wrong.
 
-Every number in sections 1 to 3 and in the lexicon note is printed by
-`scripts/calibrate_gate.py`; the whole-corpus table in section 5 is printed by
-`daleel gate data/raw/`. Ground truth stays on the annotator's machine, so the
-script runs locally and only its numbers are published here.
+Every number in sections 1 to 3, in the lexicon note and in the count of pages
+with letters from other scripts is printed by `scripts/calibrate_gate.py`. The
+verdict tables in sections 5 and 6 are printed by `daleel gate data/raw/`, and
+the page structures and word counts in section 6 by `scripts/inspect_pages.py`.
+Ground truth stays on the annotator's machine, so the calibration script runs
+locally and only its numbers are published here.
 
 ## Setup
 
@@ -148,9 +150,10 @@ amounts. Trusting a broken page puts wrong or missing text in front of a
 student; rejecting a sound page costs one OCR run. The threshold leans toward
 rejection.
 
-## 5. The whole corpus
+## 5. The corpus at calibration
 
-`daleel gate data/raw/`, after all five rules:
+The five documents the calibration was built on, through `daleel gate data/raw/`
+after all five rules:
 
 | Document | Route | Pages | Trusted | Untrusted | No Arabic text | Gate says | Agrees |
 |---|---|---|---|---|---|---|---|
@@ -170,7 +173,60 @@ rejection.
   are complete. Rejecting those costs an OCR run each.
 - The guide's covers, pages 1 and 86, have no Arabic text layer at all.
 
-## 6. Limitations
+## 6. Out of sample: four more documents
+
+Four documents joined the corpus after the rules and the threshold were fixed:
+the organizational regulations, the code of student conduct, the student
+charter and the student portal guide. None of them contributed to any rule, so
+they test the router and the gate on documents neither was built from. Their
+sources are in `data/README.md`, and their checksums in `data/SHA256SUMS`.
+
+| Document | Producer | Pages | Route | Trusted | Untrusted | No Arabic text |
+|---|---|---|---|---|---|---|
+| organizational_regulations | none | 58 | text_layer (default) | 43 | 1 | 14 |
+| student_conduct_code | Adobe PDF library 15.00 | 12 | text_layer | 9 | 0 | 3 |
+| student_charter | Adobe PDF library 15.00 | 8 | text_layer | 3 | 0 | 5 |
+| student_portal_guide | GPL Ghostscript 10.00.0 | 42 | text_layer (default) | 37 | 4 | 1 |
+
+- **The router held.** The conduct code and the charter use library version
+  15.00, which no rule was built from, and routed correctly: pdfplumber shows
+  75% and 76% presentation forms, and the gate trusts every one of their pages
+  that has Arabic text. The regulations' download carries no metadata at all,
+  and an online compressor rewrote the portal guide's producer and creator, so
+  both took the default route. The gate then trusted their text layers.
+- **The first apparent disagreement was the summary's fault.** The document
+  summary first reported the charter as needing OCR, because five of its eight
+  pages have no text layer. Those five are its cover, a photograph, two title
+  pages and its back cover; all of its content is on the three trusted pages.
+  The summary now judges a document's text layer only on pages with Arabic in
+  it, and agrees with the router on all nine documents.
+- **Text drawn as shapes.** Most pages without a text layer are outlines: ten
+  of the regulations' fourteen carry between 1,100 and 4,750 vector curves and
+  at most a few hundred characters, none of them Arabic letters. Among them is
+  the page defining every grade code, which only OCR can read.
+- **pdfplumber's tolerances assume standard pages.** The regulations, the
+  conduct code and the charter define their pages at one tenth of A4.
+  pdfplumber groups characters into lines and words with fixed tolerances, so
+  on these pages it merges lines and splits words: regulations page 4 gives
+  1,690 words through pdfplumber and 359 through pypdfium2, from the same 1,846
+  letters. With its tolerances scaled to the page, pdfplumber gives 360.
+  pypdfium2 needed no adjustment.
+- **Glyph codes read as characters.** Regulations page 44 embeds a medical test
+  form whose fonts carry no usable character map, so its text layer holds 769
+  letters from Ethiopic and Canadian Syllabics instead of Arabic. The gate
+  rejects the page only because it holds no Arabic words: the
+  `cid_placeholders` rule never fires with pypdfium2, which writes wrong
+  characters where pdfminer writes placeholders. It is the only one of the 257
+  pages with such letters.
+- **Two sound pages rejected.** Portal pages 8 and 18 fail validity at 93% and
+  94%, and their only unknown words are real ones: the IBAN (الايبان), five
+  times, and "passed" (المجتازة) as in passed courses, twice. The second is too
+  rare in web text to pass the cutoff. The first is split across several
+  spellings that normalization merges, and the lexicon applies its cutoff to
+  each spelling before merging them; a separate change corrects that. Both
+  errors are rejections, the direction the threshold was set to lean.
+
+## 7. Limitations
 
 - **Five calibration pages.** Two sound and three broken pages set the
   threshold. More ground truth would narrow the gap and could move it.
@@ -184,9 +240,13 @@ rejection.
   page with 9 correct words and a content page whose text is missing look alike
   to every text metric; the difference is only in the image. Checking
   completeness needs OCR output to compare against.
-- **The inventory still reads with pdfplumber,** so its published
-  presentation-form ratios describe what pdfplumber sees, not what the gate
-  sees.
+- **Rare real words cost pages.** A page that repeats a real word too rare
+  for the lexicon can fall below the threshold, as two portal pages did. The
+  cost is an OCR run, not a wrong answer.
+- **Glyph codes read as characters are caught only when nothing else is
+  there.** A page mixing sound Arabic with such letters would be trusted, its
+  garbled words silently missing. None exists in the corpus today, and a rule
+  for them is planned.
 
 ## Reproduce
 

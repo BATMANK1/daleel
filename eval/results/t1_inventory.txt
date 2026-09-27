@@ -3,7 +3,11 @@ file                            pages  producer                     chars   ch/p
 academic_weeks_1448.pdf         3      Adobe PDF library 18.00      4911    1637.0   0%        0.0      0.8      0
 guidance_manual.pdf             19     Microsoft® Word 2019         10750   565.8    0%        0.0      0.0      0
 library_services_2024_2025.pdf  16     Microsoft® PowerPoint® 2019  5122    320.1    0%        0.0      0.0      0
+organizational_regulations.pdf  58                                  83800   1444.8   0%        0.0      0.0      0
 orientation_1446.pdf            13     Microsoft® Word 2019         2619    201.5    0%        0.0      0.0      0
+student_charter.pdf             8      Adobe PDF library 15.00      7199    899.9    0%        0.0      0.0      0
+student_conduct_code.pdf        12     Adobe PDF library 15.00      19978   1664.8   0%        0.0      0.0      0
 student_guide_2025.pdf          86     PDFium                       111512  1296.7   0%        0.0      0.0      0
+student_portal_guide.pdf        42     GPL Ghostscript 10.00.0      16244   386.8    0%        0.0      0.0      0
 
 Text layers read with pypdfium2.
