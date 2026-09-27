@@ -11,7 +11,7 @@ regulations in Arabic, with the exact clause cited.
 
 ## The problem
 
-Students need answers from 137 pages of Arabic regulation documents:
+Students need answers from 257 pages of Arabic regulation documents:
 *Can I transfer majors? What GPA do I need? When is the drop/add deadline?*
 Today the options are reading all of it, asking a classmate who may be wrong,
 or waiting for the registrar.
@@ -34,10 +34,14 @@ no naive pipeline would notice. `daleel inventory data/raw/` reports it, and
 | Guidance manual | Microsoft® Word 2019 | 19 | 566 | 0% | 0% |
 | Library services | Microsoft® PowerPoint® 2019 | 16 | 320 | 0% | 0% |
 | Orientation 1446 | Microsoft® Word 2019 | 13 | 202 | 0% | 0% |
+| Organizational regulations | none | 58 | 1,445 | 76% | 0% |
+| Code of student conduct | Adobe PDF library 15.00 | 12 | 1,665 | 75% | 0% |
+| Student charter | Adobe PDF library 15.00 | 8 | 900 | 76% | 0% |
+| Student portal guide | GPL Ghostscript 10.00.0 | 42 | 387 | 77% | 0% |
 
-Three distinct failure modes sit behind those numbers:
+Five failure modes sit behind those numbers:
 
-1. **Presentation-form substitution.** In the two design-tool exports, most
+1. **Presentation-form substitution.** In six of the nine documents, most
    Arabic extracts as Unicode Arabic Presentation Forms, the contextual glyph
    variants a renderer picks per letter position, rather than as base letters,
    at least through pdfplumber and pdftotext (see below). A student typing
@@ -52,10 +56,17 @@ Three distinct failure modes sit behind those numbers:
 3. **Low text density.** The PowerPoint and orientation documents yield about
    200 to 320 characters per page, meaning most of their content is graphics
    and needs OCR regardless of whether the extracted text is sound.
+4. **Text drawn as shapes.** Design tools can convert text to vector outlines,
+   leaving no text layer at all. 25 of the 257 pages have no Arabic in their
+   text layer, from covers to the regulations' page defining every grade code,
+   and only OCR can read them.
+5. **Glyph codes read as characters.** One page embeds a form whose fonts carry
+   no usable character map, so its text layer holds Ethiopic and Canadian
+   Syllabics letters instead of Arabic.
 
 ### The failure signature depends on the extraction backend
 
-All five documents, read with pdfplumber and with poppler's `pdftotext`:
+The first five documents, read with pdfplumber and with poppler's `pdftotext`:
 
 | Document | pdfplumber chars | pdftotext chars | Presentation forms | pdftotext bidi controls /1k |
 |---|---|---|---|---|
@@ -77,6 +88,14 @@ marks are subtracted, the two backends agree on text length within 2% on four
 documents and 6.5% on the guidance manual. Quality gate thresholds are
 therefore only meaningful per backend, and must be recorded with one.
 
+Scaled pages break pdfplumber's word grouping. The regulations, the conduct
+code and the charter define their pages at one tenth of A4, and pdfplumber
+groups characters into lines and words with fixed tolerances sized for standard
+pages. On these it merges lines and splits words: page 4 of the regulations
+gives 1,690 words through pdfplumber and 359 through pypdfium2, from the same
+1,846 letters. With its tolerances scaled to the page, pdfplumber gives 360.
+`scripts/inspect_pages.py` shows this for any page.
+
 ### Provenance
 
 The 1448 academic calendar first added to the corpus turned out, on reading its
@@ -92,6 +111,18 @@ official calendar, but it rewrote one summer deadline from the end of drop and
 add to the end of add, which would mislead a student. It is used only to
 cross-check the calendar ground truth's dates, and is never cited.
 
+The organizational regulations first arrived as a 70-page copy shared on
+WhatsApp, with metadata that looked entirely official. Comparing it against the
+college's site showed two documents bound together: the site publishes the
+58-page regulations and the 12-page code of student conduct separately, and
+both are in the corpus as published. A copy of the conduct code saved through a
+browser's print dialog was likewise replaced with the original download. The
+student guide, which the site does not offer for download, comes from the
+Student Affairs department's Telegram channel.
+
+Every document's SHA-256 is recorded in [`data/SHA256SUMS`](data/SHA256SUMS),
+and `sha256sum -c data/SHA256SUMS` checks a local copy against it.
+
 ## Extraction routing
 
 `daleel route data/raw/` predicts, for each document, which extraction path to
@@ -105,17 +136,27 @@ metadata:
 | Guidance manual | Microsoft® Word 2019 | OCR | lossy substitution |
 | Library services | Microsoft® PowerPoint® 2019 | OCR | lossy substitution |
 | Orientation 1446 | Microsoft® Word 2019 | OCR | lossy substitution |
+| Organizational regulations | none | text layer | unknown (default) |
+| Code of student conduct | Adobe PDF library 15.00 | text layer | presentation forms |
+| Student charter | Adobe PDF library 15.00 | text layer | presentation forms |
+| Student portal guide | GPL Ghostscript 10.00.0 | text layer | unknown (default) |
 
 A route is a prior, not a verdict. The quality gate still checks every
 document, so a wrong prediction costs time and never correctness.
 
-The rules come from five documents, and each rule in the code names the
-documents it rests on. All three Microsoft documents have since been checked
+The rules come from the first five documents, and each rule in the code names
+the documents it rests on. All three Microsoft documents have since been checked
 against hand-transcribed ground truth, and all three text layers are broken:
 their words match the page at 5%, 50% and 33% precision. Every route held,
 including the orientation guide's, which had been a prediction only. Software
 with no evidence behind it, including other Microsoft and Adobe products,
 falls to a default: try the text layer and let the gate decide.
+
+The four documents added later tested the rules out of sample. The conduct code
+and the charter use Adobe PDF library 15.00, a version no rule was built from,
+and routed correctly. The regulations carry no metadata at all, and an online
+compressor rewrote the portal guide's producer and creator, so both took the
+default, and the gate then trusted their text layers.
 
 ## Quality gate
 
@@ -131,12 +172,18 @@ calibrated against the hand-transcribed ground truth.
 | Library services | OCR | 16 | 1 | 15 | 0 | yes |
 | Orientation 1446 | OCR | 13 | 1 | 12 | 0 | yes |
 | Student Guide 2025 | text layer | 86 | 82 | 2 | 2 | yes |
+| Organizational regulations | text layer | 58 | 43 | 1 | 14 | yes |
+| Code of student conduct | text layer | 12 | 9 | 0 | 3 | yes |
+| Student charter | text layer | 8 | 3 | 0 | 5 | yes |
+| Student portal guide | text layer | 42 | 37 | 4 | 1 | yes |
 
 The router predicts each route from metadata alone; the gate reaches the same
-conclusion for all five documents by reading every word.
+conclusion for all nine documents by reading every word. Pages with no Arabic
+in their text layer go to OCR whatever their document's route.
 
 The gate still trusts two visibly broken pages, because their fragments are
-real entries in a web word list. That limitation, the evidence behind every
+real entries in a web word list, and it rejected two sound pages of the portal
+guide over rare real words. Those limitations, the evidence behind every
 threshold, and how to reproduce each number are in
 [`eval/results/gate_calibration.md`](eval/results/gate_calibration.md).
 
@@ -151,6 +198,8 @@ daleel inventory data/raw/ --backend pdfplumber   # the same, via pdfplumber, fo
 daleel route data/raw/                            # predicted extraction path per document
 daleel gate data/raw/                             # verdicts per document
 daleel gate data/raw/ --pages                     # verdicts per page, with reasons
+sha256sum -c data/SHA256SUMS                      # check your copies of the documents
+python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made of
 pytest                                            # the test suite
 ```
 
