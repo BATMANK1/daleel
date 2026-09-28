@@ -119,6 +119,12 @@ bullets, check marks and icons are omitted.
 is typed on the line directly after the box's text, with no blank line
 between them.
 
+4.9 **A percent sign** is typed after its number, `70%`, however it prints.
+Digits that follow Arabic words are displayed as Arabic numbers, which the
+sign does not join, so `70%` typed after Arabic prints as `%70`, while after
+Latin text it stays `X 20%`. Rule 4.4's left-to-right reading does not apply
+to the sign. Check with codepoints (6.10): 0025 comes after the digits.
+
 ## 5. What to include
 
 5.1 **Include**: headings, body text, captions, headers, footers and page
