@@ -12,8 +12,12 @@ from pathlib import Path
 import pytest
 
 
-def tiny_pdf(pages: list[str]) -> bytes:
-    """A minimal valid PDF with one line of Helvetica text per page ("" for blank)."""
+def tiny_pdf(pages: list[str], size: tuple[float, float] = (300, 200)) -> bytes:
+    """A minimal valid PDF with one line of Helvetica text per page ("" for blank).
+
+    `size` is every page's width and height in points.
+    """
+    width, height = size
     kids = " ".join(f"{3 + 2 * i} 0 R" for i in range(len(pages)))
     font_id = 3 + 2 * len(pages)
     objects = [
@@ -25,7 +29,7 @@ def tiny_pdf(pages: list[str]) -> bytes:
         shows = " ".join(f"({line}) Tj 0 -14 Td" for line in lines)
         stream = f"BT /F1 12 Tf 20 150 Td {shows} ET" if lines else ""
         objects.append(
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] "
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] "
             f"/Contents {4 + 2 * i} 0 R /Resources << /Font << /F1 {font_id} 0 R >> >> >>"
         )
         objects.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
@@ -45,11 +49,16 @@ def tiny_pdf(pages: list[str]) -> bytes:
 
 @pytest.fixture
 def make_pdf(tmp_path: Path) -> Callable[..., Path]:
-    """Write a small PDF with one line of Latin text per page, and return its path."""
+    """Write a small PDF with one line of Latin text per page, and return its path.
 
-    def make(pages: list[str], name: str = "doc.pdf") -> Path:
+    `size` is every page's width and height in points.
+    """
+
+    def make(
+        pages: list[str], name: str = "doc.pdf", size: tuple[float, float] = (300, 200)
+    ) -> Path:
         path = tmp_path / name
-        path.write_bytes(tiny_pdf(pages))
+        path.write_bytes(tiny_pdf(pages, size))
         return path
 
     return make
