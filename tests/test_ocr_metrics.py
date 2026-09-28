@@ -1,9 +1,9 @@
 """Tests for scoring OCR output against ground truth.
 
 The Arabic cases are real. Three are errors Tesseract made on page 5 of the
-organizational regulations; the rest are printed on page 21, including a
-percentage whose reading order an engine can get wrong while reading every
-character right.
+organizational regulations; the rest come from pages 21 and 27, including a
+percentage whose display order Tesseract copied while reading every character
+right.
 """
 
 from __future__ import annotations
@@ -124,10 +124,11 @@ def test_a_decomposed_letter_is_the_same_text() -> None:
 
 
 def test_percent_order_costs_characters_but_not_words() -> None:
-    # Page 21 prints the percent sign to the left of the number. An engine that
-    # returns (70%) has every character right and the order wrong.
-    assert char_errors("(%70)", "(70%)").edits == 2
-    assert word_errors("(%70)", "(70%)").edits == 0
+    # Page 21 prints (70%), which Arabic text displays with the sign left of the
+    # number. Tesseract with ara+eng returned it in display order, brackets
+    # reversed: every character right, four of them in the wrong place.
+    assert char_errors("(70%)", ")%70(").edits == 4
+    assert word_errors("(70%)", ")%70(").edits == 0
 
 
 # Words
@@ -138,7 +139,7 @@ def test_percent_order_costs_characters_but_not_words() -> None:
     [
         ("الكلية/المعهد", ["الكلية", "المعهد"]),
         ("الكلية/ المعهد", ["الكلية", "المعهد"]),
-        ("(%70)", ["70"]),
+        ("(70%)", ["70"]),
         ("بناءً على", ["بناءً", "على"]),
         ("RCJY.gov.sa", ["RCJY", "gov", "sa"]),
         ("", []),
