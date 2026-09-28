@@ -124,7 +124,10 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = tesseract.version()
     models = tesseract.model_hashes(settings.lang)
-    tag = f"tesseract-{engine}-{settings.lang}-psm{settings.psm}-{settings.dpi}dpi"
+    # The model files are named in the tag because the same language can come
+    # from Tesseract's standard, fast or best set, which read differently.
+    model_tag = "+".join(sha[:8] for sha in models.values())
+    tag = f"tesseract-{engine}-{settings.lang}-{model_tag}-psm{settings.psm}-{settings.dpi}dpi"
     hashes = ", ".join(f"{name}.traineddata sha256 {sha[:16]}" for name, sha in models.items())
     print(f"Tesseract {engine}, {hashes}, psm {settings.psm}, {settings.dpi} DPI")
     print(
