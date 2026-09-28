@@ -85,6 +85,13 @@ question mark ؟ · and their Latin forms wherever the page uses those.
 3.9 **Spaces**: one space between words. Visual gaps created by justification or
 tatweel are not spaces. No spaces at the start or end of a line.
 
+3.10 **Characters that print alike.** Some fonts draw two characters the same
+way: in the organizational regulations, `,` and the Arabic decimal separator
+`٫` cannot be told apart. No image can settle such a pair, so once both
+transcriptions are finished, the character the PDF encodes at that spot
+decides, where the page has a text layer there, and the log records the call.
+Without a text layer, type `[?]` under 7.2. This is the one exception to 2.2.
+
 ## 4. Reading order and layout
 
 4.1 Right to left, top to bottom. When blocks sit side by side, finish the
