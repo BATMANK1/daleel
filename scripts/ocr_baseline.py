@@ -10,7 +10,8 @@ data/interim/ground_truth/ is scored against that output:
 - page    <doc>_pNN.txt: the whole page, so reading order counts
 - region  <doc>_pNN_rK.txt: part of a page, scored against the stretch of
           output that matches it best
-- table   any .csv: no single reading order, so only the words missed count
+- table   any .csv, less its column names: no single reading order, so only
+          the words missed count
 - partial the .txt of a page whose table is in a .csv: its blocks sit around
           the table, so, like the table, only the words missed count
 
@@ -62,9 +63,12 @@ class Piece:
         return self.path.stem
 
     def reference(self) -> str:
+        """The text the page prints: for a table, every row but the column names."""
         if self.path.suffix == ".csv":
             with self.path.open(encoding="utf-8", newline="") as f:
-                return "\n".join(" ".join(row) for row in csv.reader(f))
+                # The first row names the columns (ANNOTATION.md 6.2) and was
+                # never printed, so no engine could read it.
+                return "\n".join(" ".join(row) for row in list(csv.reader(f))[1:])
         return self.path.read_text(encoding="utf-8")
 
 

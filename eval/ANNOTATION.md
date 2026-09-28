@@ -144,7 +144,9 @@ CSV, not text. A grid has no single reading order, so it is compared cell by
 cell rather than character by character.
 
 6.2 The first row is a header with column names you choose. One CSV row per table
-row. Section 3 applies inside every cell.
+row. Section 3 applies inside every cell. A header the table itself prints is
+text on the page, so it is transcribed as the first table row, after the
+column names; scoring skips only the column names.
 
 6.3 A cell spanning several rows has its value repeated in each row it covers.
 
