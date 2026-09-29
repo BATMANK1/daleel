@@ -20,7 +20,8 @@ inside the region must still be accounted for.
 
 A table has no single reading order, so an edit count would mostly measure the
 order an engine happened to read its cells in. Tables are scored instead by
-the words the engine missed, counted as a bag.
+the words the engine missed, counted as a bag, and, where the ground truth
+covers the whole page, by the words it added that the page never printed.
 """
 
 from __future__ import annotations
@@ -191,3 +192,17 @@ def missed_words(
     found = expected & Counter(words(form(output)))
     total = expected.total()
     return Errors(edits=total - found.total(), length=total)
+
+
+def added_words(
+    reference: str, output: str, *, form: Callable[[str], str] = normalized_form
+) -> Errors:
+    """Words of the output found nowhere in the reference, ignoring order.
+
+    The other half of missed_words. A misread word is both missed and added,
+    and so is a word written differently, such as a date split in two. A word
+    the page never printed is only added, which missed words cannot see: an
+    engine that invents a table cell misses nothing. The reference must cover
+    the whole page the output was read from.
+    """
+    return missed_words(output, reference, form=form)

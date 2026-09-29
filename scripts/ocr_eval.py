@@ -5,6 +5,7 @@
     python3 scripts/ocr_eval.py paddle [--device cpu] [--min-score 0] [--stretch 1] [--dpi 300]
     python3 scripts/ocr_eval.py dots [--server http://localhost:8000] [--quantization none]
                                      [--max-pixels N] [--dpi 200]
+    python3 scripts/ocr_eval.py saved data/interim/ocr/<run>
 
 Each run gives one engine's row of T2. Every page is rendered once with
 daleel.ocr.render and read once, and every piece of its ground truth in
@@ -18,6 +19,11 @@ data/interim/ground_truth/ is scored against that output:
 - partial the .txt of a page whose table is in a .csv: its blocks sit around
           the table, so, like the table, only the words missed count
 
+Where the ground truth covers a whole page, the words the engine added count
+too: words it wrote that the page never printed, which is how an invented
+table cell shows. Missed words are counted on every piece, added words on
+whole pages and on the tables of whole pages.
+
 CER raw, CER normalized and WER normalized are summed over pages and regions
 before dividing, so each is weighted by its length. Before the timed run the
 engine reads the first page once, untimed, so a one-off start-up cost such as
@@ -27,6 +33,9 @@ it; like the ground truth, it stays out of git.
 
 dots.mocr needs a vLLM server already serving it on this machine, and pages
 for it are rendered at 200 DPI by default, as its own parser renders them.
+
+saved scores what an earlier run saved, without reading the pages again, for
+when the scoring changes but the engines have not. It cannot time anything.
 """
 
 from __future__ import annotations
@@ -43,6 +52,7 @@ from pathlib import Path
 
 from daleel.eval.ocr_metrics import (
     Errors,
+    added_words,
     char_errors,
     missed_words,
     normalized_form,
@@ -59,6 +69,8 @@ OUTPUT = Path("data/interim/ocr")
 PIECE = re.compile(r"(?P<doc>.+)_p(?P<page>\d{2})(?:_r(?P<region>\d+))?\.(?P<ext>txt|csv)")
 NONE = Errors(edits=0, length=0)
 
+Page = tuple[str, int]
+
 
 @dataclass(frozen=True)
 class Piece:
@@ -66,6 +78,9 @@ class Piece:
     doc: str
     page: int
     kind: str
+    # Part of its page only, so words the engine read elsewhere on the page are
+    # not added words.
+    region: bool = False
 
     @property
     def name(self) -> str:
@@ -95,8 +110,21 @@ def find_pieces(folder: Path) -> list[Piece]:
             kind = "partial"
         else:
             kind = "page"
-        pieces.append(Piece(path=path, doc=m["doc"], page=int(m["page"]), kind=kind))
+        region = m["region"] is not None
+        pieces.append(Piece(path=path, doc=m["doc"], page=int(m["page"]), kind=kind, region=region))
     return pieces
+
+
+def whole_pages(pieces: list[Piece]) -> dict[Page, str]:
+    """The full text of every page whose ground truth covers all of it."""
+    pages: dict[Page, list[Piece]] = {}
+    for piece in pieces:
+        pages.setdefault((piece.doc, piece.page), []).append(piece)
+    return {
+        page: "\n".join(piece.reference() for piece in found)
+        for page, found in pages.items()
+        if not any(piece.region for piece in found)
+    }
 
 
 def cpu() -> str:
@@ -150,6 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # dots.mocr's parser renders at 200 DPI; at 300 a page costs 2.25 times the image tokens.
     add_dpi(served, 200)
+    saved = engines.add_parser("saved", help="score what an earlier run saved, reading nothing")
+    saved.add_argument("folder", type=Path, help="the run's folder, under data/interim/ocr")
     return parser
 
 
@@ -174,9 +204,6 @@ def build_engine(args: argparse.Namespace) -> Engine:
     return paddle.PaddleEngine(settings)
 
 
-Page = tuple[str, int]
-
-
 def read_pages(
     engine: Engine, pngs: dict[Page, bytes], folder: Path
 ) -> tuple[dict[Page, str], dict[Page, float]]:
@@ -197,6 +224,57 @@ def read_pages(
     return outputs, seconds
 
 
+def saved_outputs(folder: Path, pages: list[Page]) -> dict[Page, str]:
+    """What an earlier run saved for each page."""
+    outputs = {}
+    for doc, page in pages:
+        path = folder / f"{doc}_p{page:02d}.txt"
+        if not path.is_file():
+            raise FileNotFoundError(f"{path} does not exist")
+        outputs[doc, page] = path.read_text(encoding="utf-8")
+    return outputs
+
+
+def report(
+    pieces: list[Piece], outputs: dict[Page, str], seconds: dict[Page, float] | None
+) -> None:
+    """The scores of every piece of ground truth, and of all of them together."""
+    whole = whole_pages(pieces)
+    print(
+        f"{'ground truth':42} {'kind':7} {'chars':>6} {'CER raw':>7} {'CER norm':>8} "
+        f"{'WER norm':>8} {'missed':>6} {'added':>6} {'sec':>5}"
+    )
+    cer_raw = cer_norm = wer_norm = missed_all = added_all = NONE
+    counted: set[Page] = set()
+    for piece in pieces:
+        page = (piece.doc, piece.page)
+        reference, output = piece.reference(), outputs[page]
+        missed = missed_words(reference, output)
+        missed_all += missed
+        row_raw = row_norm = row_wer = added = NONE
+        if piece.kind in ("page", "region"):
+            region = piece.kind == "region"
+            row_raw = char_errors(reference, output, form=raw_form, region=region)
+            row_norm = char_errors(reference, output, form=normalized_form, region=region)
+            row_wer = word_errors(reference, output, form=normalized_form, region=region)
+            cer_raw, cer_norm, wer_norm = cer_raw + row_raw, cer_norm + row_norm, wer_norm + row_wer
+        # A whole page's added words are counted once: on the page, or on its table.
+        if page in whole and piece.kind in ("page", "table") and page not in counted:
+            counted.add(page)
+            added = added_words(whole[page], output)
+            added_all += added
+        sec = f"{seconds[page]:5.1f}" if seconds else "    -"
+        print(
+            f"{piece.name:42} {piece.kind:7} {len(raw_form(reference)):>6} {pct(row_raw):>7} "
+            f"{pct(row_norm):>8} {pct(row_wer):>8} {pct(missed):>6} {pct(added):>6} {sec}"
+        )
+    mean = f"{sum(seconds.values()) / len(seconds):5.1f}" if seconds else "    -"
+    print(
+        f"{'all pages and regions':42} {'':7} {cer_raw.length:>6} {pct(cer_raw):>7} "
+        f"{pct(cer_norm):>8} {pct(wer_norm):>8} {pct(missed_all):>6} {pct(added_all):>6} {mean}"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -205,6 +283,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     pieces = find_pieces(GROUND_TRUTH)
     pages = sorted({(piece.doc, piece.page) for piece in pieces})
+
+    if args.engine == "saved":
+        try:
+            outputs = saved_outputs(args.folder, pages)
+        except FileNotFoundError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"output saved in {args.folder}, scored again without reading the pages")
+        print()
+        report(pieces, outputs, seconds=None)
+        print()
+        print(f"{len(pieces)} pieces of ground truth on {len(pages)} pages")
+        return 0
+
     missing = sorted({doc for doc, _ in pages if not (RAW / f"{doc}.pdf").is_file()})
     if missing:
         print(f"error: missing from {RAW}: {', '.join(missing)}", file=sys.stderr)
@@ -239,32 +331,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    print(
-        f"{'ground truth':42} {'kind':7} {'chars':>6} {'CER raw':>7} {'CER norm':>8} "
-        f"{'WER norm':>8} {'missed':>6} {'sec':>5}"
-    )
-    cer_raw = cer_norm = wer_norm = missed_all = NONE
-    for piece in pieces:
-        reference, output = piece.reference(), outputs[piece.doc, piece.page]
-        missed = missed_words(reference, output)
-        missed_all += missed
-        row_raw = row_norm = row_wer = NONE
-        if piece.kind in ("page", "region"):
-            region = piece.kind == "region"
-            row_raw = char_errors(reference, output, form=raw_form, region=region)
-            row_norm = char_errors(reference, output, form=normalized_form, region=region)
-            row_wer = word_errors(reference, output, form=normalized_form, region=region)
-            cer_raw, cer_norm, wer_norm = cer_raw + row_raw, cer_norm + row_norm, wer_norm + row_wer
-        print(
-            f"{piece.name:42} {piece.kind:7} {len(raw_form(reference)):>6} {pct(row_raw):>7} "
-            f"{pct(row_norm):>8} {pct(row_wer):>8} {pct(missed):>6} "
-            f"{seconds[piece.doc, piece.page]:5.1f}"
-        )
-    mean_seconds = sum(seconds.values()) / len(seconds)
-    print(
-        f"{'all pages and regions':42} {'':7} {cer_raw.length:>6} {pct(cer_raw):>7} "
-        f"{pct(cer_norm):>8} {pct(wer_norm):>8} {pct(missed_all):>6} {mean_seconds:5.1f}"
-    )
+    report(pieces, outputs, seconds)
     print()
     print(f"{len(pieces)} pieces of ground truth on {len(pages)} pages; output in {OUTPUT / tag}")
     return 0

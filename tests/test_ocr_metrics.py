@@ -16,6 +16,7 @@ import pytest
 from daleel.eval.ocr_metrics import (
     Errors,
     Span,
+    added_words,
     char_errors,
     edit_distance,
     locate,
@@ -163,6 +164,18 @@ def test_missed_words_ignore_order() -> None:
 
 def test_missed_words_count_repeats() -> None:
     assert missed_words("ممتاز ممتاز جيد", "ممتاز جيد") == Errors(edits=1, length=3)
+
+
+def test_an_invented_cell_is_added_but_misses_nothing() -> None:
+    # A calendar row read with a second day the page never printed.
+    row = "الأحد 2026/08/23"
+    read = "الأحد 2026/08/23 الخميس 2026/08/23"
+    assert missed_words(row, read).edits == 0
+    assert added_words(row, read) == Errors(edits=4, length=8)
+
+
+def test_added_words_count_repeats() -> None:
+    assert added_words("ممتاز جيد", "ممتاز ممتاز جيد") == Errors(edits=1, length=3)
 
 
 # Errors
