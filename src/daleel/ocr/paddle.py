@@ -17,6 +17,10 @@ Hugging Face backend skips that step, so the backend is fixed as well, and
 python-bidi's version is recorded beside PaddleOCR's. Joining the lines into a
 page is left to daleel.ocr.reading_order, since PaddleOCR sorts a row's boxes
 left to right.
+
+PaddlePaddle is pinned at 3.2.2. Versions 3.3.0 and 3.3.1 fail on MKL-DNN,
+the default CPU path, and without MKL-DNN the server detector allocates about
+5 GB per megapixel of page: 58 GB for the academic calendar at 300 DPI.
 """
 
 from __future__ import annotations

@@ -16,9 +16,11 @@ dev = [
   "pre-commit",
 ]
 # The PaddleOCR engine, pinned: its results are only comparable at one version.
+# PaddlePaddle stays at 3.2.2 because 3.3.0 and 3.3.1 break MKL-DNN, the
+# default CPU path (github.com/PaddlePaddle/Paddle/issues/77340).
 paddle = [
   "paddleocr==3.7.0",
-  "paddlepaddle==3.3.1",
+  "paddlepaddle==3.2.2",
 ]
 
 [project.scripts]
