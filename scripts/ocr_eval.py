@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run Tesseract on every page that has ground truth, and score what it reads.
+"""Run an OCR engine on every page that has ground truth, and score what it reads.
 
-    python3 scripts/ocr_baseline.py [--lang ara] [--psm 3] [--dpi 300]
+    python3 scripts/ocr_eval.py tesseract [--lang ara] [--psm 3] [--dpi 300]
 
-This produces the Tesseract row of T2. Each page is rendered once with
+Each run gives one engine's row of T2. Every page is rendered once with
 daleel.ocr.render and read once, and every piece of its ground truth in
 data/interim/ground_truth/ is scored against that output:
 
@@ -16,9 +16,10 @@ data/interim/ground_truth/ is scored against that output:
           the table, so, like the table, only the words missed count
 
 CER raw, CER normalized and WER normalized are summed over pages and regions
-before dividing, so each is weighted by its length. What the engine read is
-saved under data/interim/ocr/ for inspection; like the ground truth, it stays
-out of git.
+before dividing, so each is weighted by its length. Before the timed run the
+engine reads the first page once, untimed, so a one-off start-up cost such as
+loading models is not charged to a page. What the engine read is saved under
+data/interim/ocr/ for inspection; like the ground truth, it stays out of git.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from daleel.eval.ocr_metrics import (
     word_errors,
 )
 from daleel.ocr import tesseract
+from daleel.ocr.engine import Engine
 from daleel.ocr.render import render_page
 
 RAW = Path("data/raw")
@@ -104,13 +106,24 @@ def pct(errors: Errors) -> str:
     return f"{errors.rate:6.1%}" if errors.length else "     -"
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--dpi", type=int, default=300, help="render resolution (default 300)")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--lang", default=tesseract.DEFAULT.lang)
-    parser.add_argument("--psm", type=int, default=tesseract.DEFAULT.psm)
-    parser.add_argument("--dpi", type=int, default=tesseract.DEFAULT.dpi)
-    args = parser.parse_args(argv)
+    engines = parser.add_subparsers(dest="engine", required=True)
+    tess = engines.add_parser("tesseract", parents=[common], help="Tesseract, through its CLI")
+    tess.add_argument("--lang", default=tesseract.DEFAULT.lang)
+    tess.add_argument("--psm", type=int, default=tesseract.DEFAULT.psm)
+    return parser
+
+
+def build_engine(args: argparse.Namespace) -> Engine:
     settings = tesseract.Settings(lang=args.lang, psm=args.psm, dpi=args.dpi)
+    return tesseract.TesseractEngine(settings)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     if not GROUND_TRUTH.is_dir():
         print(f"error: no ground truth in {GROUND_TRUTH}; see eval/ANNOTATION.md", file=sys.stderr)
@@ -123,28 +136,27 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        engine = tesseract.version()
-        models = tesseract.model_hashes(settings.lang)
+        engine = build_engine(args)
     except tesseract.TesseractError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    # The model files are named in the tag because the same language can come
-    # from Tesseract's standard, fast or best set, which read differently.
-    model_tag = "+".join(sha[:8] for sha in models.values())
-    tag = f"tesseract-{engine}-{settings.lang}-{model_tag}-psm{settings.psm}-{settings.dpi}dpi"
-    hashes = ", ".join(f"{name}.traineddata sha256 {sha[:16]}" for name, sha in models.items())
-    print(f"Tesseract {engine}, {hashes}, psm {settings.psm}, {settings.dpi} DPI")
+    tag = f"{engine.tag()}-{args.dpi}dpi"
+    print(f"{engine.describe()}; pages rendered at {args.dpi} DPI")
     print(
         f"pypdfium2 {version('pypdfium2')}, Python {platform.python_version()}, {cpu()}, "
         f"{os.cpu_count()} threads, OMP_THREAD_LIMIT {os.environ.get('OMP_THREAD_LIMIT', 'unset')}"
     )
     print()
 
+    pngs = {
+        (doc, page): render_page(RAW / f"{doc}.pdf", page, dpi=args.dpi).png()
+        for doc, page in pages
+    }
+    engine.recognize(pngs[pages[0]])  # the untimed first read
     (OUTPUT / tag).mkdir(parents=True, exist_ok=True)
     outputs, seconds = {}, {}
     for doc, page in pages:
-        png = render_page(RAW / f"{doc}.pdf", page, dpi=settings.dpi).png()
-        result = tesseract.recognize(png, settings)
+        result = engine.recognize(pngs[doc, page])
         outputs[doc, page], seconds[doc, page] = result.text, result.seconds
         (OUTPUT / tag / f"{doc}_p{page:02d}.txt").write_text(result.text, encoding="utf-8")
         if result.warnings:
