@@ -103,7 +103,11 @@ class Settings:
     # The defaults of dots.mocr's parser, stated so that a change to them shows.
     temperature: float = 0.1
     top_p: float = 1.0
-    max_tokens: int = 32768
+    # The parser asks for up to 32,768 tokens from a server whose context is
+    # longer still, so its answers are limited only by the context. vLLM
+    # refuses a limit that, with the page, would not fit in the context, so
+    # none is sent unless one is set: an answer may run to the context's end.
+    max_tokens: int | None = None
     # Not the parser's: a fixed seed makes the sampling repeatable.
     seed: int = 0
     # Seconds to wait for a page. A long page on a small GPU takes minutes.
@@ -150,9 +154,10 @@ def chat_request(model: str, png: bytes, settings: Settings = DEFAULT) -> dict[s
         "messages": [{"role": "user", "content": content}],
         "temperature": settings.temperature,
         "top_p": settings.top_p,
-        "max_completion_tokens": settings.max_tokens,
         "seed": settings.seed,
     }
+    if settings.max_tokens is not None:
+        request["max_completion_tokens"] = settings.max_tokens
     if settings.max_pixels is not None:
         # Sent with every page, so the limit a page was read at is the one recorded.
         request["mm_processor_kwargs"] = {"max_pixels": settings.max_pixels}
@@ -443,11 +448,16 @@ class DotsEngine:
             else f"quantization {settings.quantization}, as stated"
         )
         pixels = MAX_PIXELS if settings.max_pixels is None else settings.max_pixels
+        answers = (
+            "the rest of the context"
+            if settings.max_tokens is None
+            else f"{settings.max_tokens:,} tokens"
+        )
         return (
             f"{self.name} revision {self.revision[:12]}; vLLM {self.vllm} at {self.server}, "
             f"{weights}, context {self.context} tokens; layout prompt, pages of up to "
-            f"{pixels:,} pixels, temperature {settings.temperature:g}, "
-            f"top_p {settings.top_p:g}, seed {settings.seed}"
+            f"{pixels:,} pixels, answers of up to {answers}, temperature "
+            f"{settings.temperature:g}, top_p {settings.top_p:g}, seed {settings.seed}"
         )
 
     def recognize(self, png: bytes) -> Result:

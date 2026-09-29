@@ -76,10 +76,16 @@ def test_the_request_is_the_one_dots_mocr_s_parser_sends() -> None:
     assert image["image_url"] == {"url": "data:image/png;base64," + base64.b64encode(png).decode()}
     assert prompt == {"type": "text", "text": IMAGE_TOKENS + LAYOUT_PROMPT}
     assert body["model"] == MODEL
-    assert (body["temperature"], body["top_p"], body["max_completion_tokens"]) == (0.1, 1.0, 32768)
-    assert body["seed"] == 0
+    assert (body["temperature"], body["top_p"], body["seed"]) == (0.1, 1.0, 0)
+    # No token limit: the answer may run to the end of the server's context.
+    assert "max_completion_tokens" not in body
     # The model's own pixel limit, which the server applies unless told otherwise.
     assert "mm_processor_kwargs" not in body
+
+
+def test_a_token_limit_is_sent_when_set() -> None:
+    body = chat_request(MODEL, png_of("RGB"), Settings(max_tokens=4096))
+    assert body["max_completion_tokens"] == 4096
 
 
 def test_a_pixel_limit_goes_with_every_page() -> None:
@@ -264,7 +270,8 @@ def test_the_engine_reads_the_server_once_and_names_what_it_serves(hub: Path) ->
     assert engine.describe() == (
         "rednote-hilab/dots.mocr revision 0123456789ab; vLLM 0.30.0 at http://localhost:8000, "
         "quantization fp8, as stated, context 16384 tokens; layout prompt, pages of up to "
-        "4,000,000 pixels, temperature 0.1, top_p 1, seed 0"
+        "4,000,000 pixels, answers of up to the rest of the context, temperature 0.1, "
+        "top_p 1, seed 0"
     )
 
 
