@@ -26,6 +26,7 @@ the default CPU path, and without MKL-DNN the server detector allocates about
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import tempfile
 import time
@@ -33,6 +34,8 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from daleel.ocr.engine import Result
 from daleel.ocr.reading_order import Box, arabic_reading_order
@@ -48,6 +51,19 @@ class Settings:
     # PaddleOCR's own defaults, stated so that a change to them shows.
     cpu_threads: int = 10
     enable_mkldnn: bool = True
+    # Lines the recognizer scores below this are dropped. PaddleOCR keeps
+    # everything by default, including what it reads in background graphics.
+    min_score: float = 0.0
+    # The page is widened by this factor before OCR, so every line image reaches
+    # the recognizer wider and it has more steps per letter (PaddleOCR issue
+    # 18349). 1 leaves the page as rendered.
+    stretch: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.min_score <= 1:
+            raise ValueError(f"min_score is a recognizer score from 0 to 1, not {self.min_score}")
+        if self.stretch <= 0:
+            raise ValueError(f"stretch must be positive, not {self.stretch}")
 
     def options(self) -> dict[str, object]:
         """The keyword arguments for paddleocr.PaddleOCR."""
@@ -57,6 +73,7 @@ class Settings:
             "use_doc_orientation_classify": False,
             "use_doc_unwarping": False,
             "use_textline_orientation": False,
+            "text_rec_score_thresh": self.min_score,
             "engine": "paddle_static",
             "device": self.device,
             "cpu_threads": self.cpu_threads,
@@ -100,6 +117,17 @@ def folder_sha256(folder: Path) -> str:
     return digest.hexdigest()
 
 
+def stretched(png: bytes, factor: float) -> bytes:
+    """The page widened by a factor, its height unchanged. A factor of 1 returns it as it is."""
+    if factor == 1:
+        return png
+    with Image.open(io.BytesIO(png)) as image:
+        wider = image.resize((round(image.width * factor), image.height), Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    wider.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 class PaddleEngine:
     """PaddleOCR with fixed models and settings.
 
@@ -127,9 +155,15 @@ class PaddleEngine:
         }
 
     def tag(self) -> str:
+        settings = self.settings
         paddleocr = self.packages[0].split()[-1]
         models = "+".join(sha[:8] for sha in self.models.values())
-        return f"paddleocr-{paddleocr}-{models}-{self.settings.device.replace(':', '')}"
+        tag = f"paddleocr-{paddleocr}-{models}-{settings.device.replace(':', '')}"
+        if settings.min_score:
+            tag += f"-min{settings.min_score:g}"
+        if settings.stretch != 1:
+            tag += f"-stretch{settings.stretch:g}"
+        return tag
 
     def describe(self) -> str:
         models = ", ".join(f"{name} sha256 {sha[:16]}" for name, sha in self.models.items())
@@ -137,7 +171,8 @@ class PaddleEngine:
         mkldnn = "on" if settings.enable_mkldnn else "off"
         return (
             f"{', '.join(self.packages)}; {models}; device {settings.device}, "
-            f"{settings.cpu_threads} CPU threads, MKL-DNN {mkldnn}"
+            f"{settings.cpu_threads} CPU threads, MKL-DNN {mkldnn}; "
+            f"min score {settings.min_score:g}, stretch {settings.stretch:g}"
         )
 
     def recognize(self, png: bytes) -> Result:
@@ -145,8 +180,8 @@ class PaddleEngine:
         # expect; an array from Pillow would reach them as RGB, colours swapped.
         with tempfile.TemporaryDirectory() as folder:
             page = Path(folder) / "page.png"
-            page.write_bytes(png)
             start = time.perf_counter()
+            page.write_bytes(stretched(png, self.settings.stretch))
             results = list(self._ocr.predict(str(page)))
             seconds = time.perf_counter() - start
         if len(results) != 1:

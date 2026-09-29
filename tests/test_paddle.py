@@ -7,12 +7,14 @@ recognized lines and their polygons, left box first on a shared row.
 
 from __future__ import annotations
 
+import io
 import sys
 import types
 from pathlib import Path
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from daleel.ocr import paddle
 from daleel.ocr.paddle import (
@@ -60,6 +62,35 @@ def test_the_models_are_named_and_preprocessing_is_off() -> None:
     assert not options["use_textline_orientation"]
     # The backend that turns each Arabic line into reading order.
     assert options["engine"] == "paddle_static"
+
+
+def test_by_default_every_line_is_kept_and_the_page_is_not_widened() -> None:
+    assert DEFAULT.options()["text_rec_score_thresh"] == 0.0
+    assert DEFAULT.stretch == 1.0
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [({"min_score": 1.5}, "from 0 to 1"), ({"stretch": 0}, "must be positive")],
+)
+def test_impossible_settings_are_refused(options: dict[str, float], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        Settings(**options)
+
+
+def test_a_stretched_page_reaches_paddleocr_wider_and_as_tall(models: Path) -> None:
+    buffer = io.BytesIO()
+    Image.new("RGB", (200, 100), "white").save(buffer, format="PNG")
+    ocr = FakeOCR([], [])
+    PaddleEngine(Settings(stretch=1.5), ocr=ocr).recognize(buffer.getvalue())
+    with Image.open(io.BytesIO(ocr.pages[0])) as received:
+        assert received.size == (300, 100)
+
+
+def test_the_tag_names_settings_that_differ_from_the_default(models: Path) -> None:
+    engine = PaddleEngine(Settings(min_score=0.5, stretch=1.5), ocr=FakeOCR([], []))
+    assert engine.tag().endswith("-cpu-min0.5-stretch1.5")
+    assert "min score 0.5, stretch 1.5" in engine.describe()
 
 
 def test_a_page_is_read_in_arabic_reading_order(models: Path) -> None:
