@@ -23,6 +23,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from daleel.ocr.engine import Result
+
 BINARY = "tesseract"
 
 # First line of `tesseract --list-langs`: List of available languages in "/path/" (3):
@@ -60,15 +62,6 @@ class Settings:
 
 
 DEFAULT = Settings()
-
-
-@dataclass(frozen=True)
-class Result:
-    """What Tesseract read from one image, how long it took, and what it warned about."""
-
-    text: str
-    seconds: float
-    warnings: str
 
 
 def _run(command: list[str], *, stdin: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -143,3 +136,28 @@ def model_hashes(lang: str, binary: str = BINARY) -> dict[str, str]:
             raise TesseractError(f"{model} does not exist")
         hashes[name] = hashlib.sha256(model.read_bytes()).hexdigest()
     return hashes
+
+
+class TesseractEngine:
+    """Tesseract with fixed settings, its version and models read once when built."""
+
+    def __init__(self, settings: Settings = DEFAULT, binary: str = BINARY) -> None:
+        self.settings = settings
+        self.binary = binary
+        self.version = version(binary)
+        self.models = model_hashes(settings.lang, binary)
+
+    def tag(self) -> str:
+        # The model files are named because the same language can come from
+        # Tesseract's standard, fast or best set, which read differently.
+        models = "+".join(sha[:8] for sha in self.models.values())
+        return f"tesseract-{self.version}-{self.settings.lang}-{models}-psm{self.settings.psm}"
+
+    def describe(self) -> str:
+        models = ", ".join(
+            f"{name}.traineddata sha256 {sha[:16]}" for name, sha in self.models.items()
+        )
+        return f"Tesseract {self.version}, {models}, psm {self.settings.psm}"
+
+    def recognize(self, png: bytes) -> Result:
+        return recognize(png, self.settings, self.binary)

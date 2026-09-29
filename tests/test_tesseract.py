@@ -22,6 +22,7 @@ from daleel.ocr.render import render_page
 from daleel.ocr.tesseract import (
     DEFAULT,
     Settings,
+    TesseractEngine,
     TesseractError,
     model_hashes,
     parse_tessdata,
@@ -164,6 +165,31 @@ def test_a_missing_model_file_is_reported(monkeypatch: pytest.MonkeyPatch, tmp_p
     monkeypatch.setattr(tesseract.subprocess, "run", fake_run(stdout=listing_of(tmp_path)))
     with pytest.raises(TesseractError, match="does not exist"):
         model_hashes("ara")
+
+
+def test_the_engine_reads_its_version_and_models_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
+    (tmp_path / "ara.traineddata").write_bytes(b"arabic weights")
+    answers = {
+        "--version": b"tesseract 5.3.4\n leptonica-1.82.0\n",
+        "--list-langs": listing_of(tmp_path),
+    }
+    commands: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        commands.append(command)
+        stdout = answers.get(command[1], "نص\n".encode())
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr(tesseract.subprocess, "run", run)
+    engine = TesseractEngine()
+    sha = hashlib.sha256(b"arabic weights").hexdigest()
+    assert engine.tag() == f"tesseract-5.3.4-ara-{sha[:8]}-psm3"
+    assert engine.describe() == f"Tesseract 5.3.4, ara.traineddata sha256 {sha[:16]}, psm 3"
+    assert engine.recognize(b"png").text == "نص\n"
+    assert [command[1] for command in commands] == ["--version", "--list-langs", "stdin"]
 
 
 def english_tesseract() -> bool:
