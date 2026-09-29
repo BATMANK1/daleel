@@ -3,6 +3,8 @@
 
     python3 scripts/ocr_eval.py tesseract [--lang ara] [--psm 3] [--dpi 300]
     python3 scripts/ocr_eval.py paddle [--device cpu] [--min-score 0] [--stretch 1] [--dpi 300]
+    python3 scripts/ocr_eval.py dots [--server http://localhost:8000] [--quantization none]
+                                     [--dpi 200]
 
 Each run gives one engine's row of T2. Every page is rendered once with
 daleel.ocr.render and read once, and every piece of its ground truth in
@@ -20,7 +22,11 @@ CER raw, CER normalized and WER normalized are summed over pages and regions
 before dividing, so each is weighted by its length. Before the timed run the
 engine reads the first page once, untimed, so a one-off start-up cost such as
 loading models is not charged to a page. What the engine read is saved under
-data/interim/ocr/ for inspection; like the ground truth, it stays out of git.
+data/interim/ocr/ for inspection, with a served model's whole response beside
+it; like the ground truth, it stays out of git.
+
+dots.mocr needs a vLLM server already serving it on this machine, and pages
+for it are rendered at 200 DPI by default, as its own parser renders them.
 """
 
 from __future__ import annotations
@@ -43,7 +49,7 @@ from daleel.eval.ocr_metrics import (
     raw_form,
     word_errors,
 )
-from daleel.ocr import tesseract
+from daleel.ocr import dots, tesseract
 from daleel.ocr.engine import Engine
 from daleel.ocr.render import render_page
 
@@ -107,20 +113,37 @@ def pct(errors: Errors) -> str:
     return f"{errors.rate:6.1%}" if errors.length else "     -"
 
 
+def add_dpi(parser: argparse.ArgumentParser, default: int) -> None:
+    # Added to each engine's parser, since a default set on an argument shared
+    # through parents=[...] would change it for every engine.
+    parser.add_argument(
+        "--dpi", type=int, default=default, help=f"render resolution (default {default})"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--dpi", type=int, default=300, help="render resolution (default 300)")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     engines = parser.add_subparsers(dest="engine", required=True)
-    tess = engines.add_parser("tesseract", parents=[common], help="Tesseract, through its CLI")
+    tess = engines.add_parser("tesseract", help="Tesseract, through its CLI")
     tess.add_argument("--lang", default=tesseract.DEFAULT.lang)
     tess.add_argument("--psm", type=int, default=tesseract.DEFAULT.psm)
-    paddle = engines.add_parser("paddle", parents=[common], help="PaddleOCR (the paddle extra)")
+    add_dpi(tess, 300)
+    paddle = engines.add_parser("paddle", help="PaddleOCR (the paddle extra)")
     paddle.add_argument("--device", default="cpu", help="cpu, or gpu:0 with paddlepaddle-gpu")
     paddle.add_argument("--cpu-threads", type=int, default=10)
     paddle.add_argument("--mkldnn", action=argparse.BooleanOptionalAction, default=True)
     paddle.add_argument("--min-score", type=float, default=0.0, help="drop lines scored below")
     paddle.add_argument("--stretch", type=float, default=1.0, help="widen the page by this factor")
+    add_dpi(paddle, 300)
+    served = engines.add_parser("dots", help="dots.mocr, on a running vLLM server")
+    served.add_argument("--server", default=dots.DEFAULT.server, help="the vLLM server's address")
+    served.add_argument(
+        "--quantization",
+        default=dots.DEFAULT.quantization,
+        help="as passed to vllm serve, such as fp8 (default none)",
+    )
+    # dots.mocr's parser renders at 200 DPI; at 300 a page costs 2.25 times the image tokens.
+    add_dpi(served, 200)
     return parser
 
 
@@ -128,6 +151,8 @@ def build_engine(args: argparse.Namespace) -> Engine:
     if args.engine == "tesseract":
         settings = tesseract.Settings(lang=args.lang, psm=args.psm, dpi=args.dpi)
         return tesseract.TesseractEngine(settings)
+    if args.engine == "dots":
+        return dots.DotsEngine(dots.Settings(server=args.server, quantization=args.quantization))
     from daleel.ocr import paddle
 
     settings = paddle.Settings(
@@ -155,7 +180,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         engine = build_engine(args)
-    except (tesseract.TesseractError, ImportError, FileNotFoundError, ValueError) as exc:
+    except (
+        tesseract.TesseractError,
+        dots.DotsError,
+        ImportError,
+        FileNotFoundError,
+        ValueError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     tag = f"{engine.tag()}-{args.dpi}dpi"
@@ -177,6 +208,9 @@ def main(argv: list[str] | None = None) -> int:
         result = engine.recognize(pngs[doc, page])
         outputs[doc, page], seconds[doc, page] = result.text, result.seconds
         (OUTPUT / tag / f"{doc}_p{page:02d}.txt").write_text(result.text, encoding="utf-8")
+        if result.response:
+            response = OUTPUT / tag / f"{doc}_p{page:02d}.response.json"
+            response.write_text(result.response, encoding="utf-8")
         if result.warnings:
             print(f"{doc} page {page}: {result.warnings}")
 

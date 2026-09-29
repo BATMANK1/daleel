@@ -13,6 +13,9 @@ class Result:
     text: str
     seconds: float
     warnings: str = ""
+    # The engine's whole answer, when it says more than the text: a served
+    # model's JSON response, with the page's layout and the tokens it took.
+    response: str = ""
 
 
 class Engine(Protocol):
