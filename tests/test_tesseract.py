@@ -123,15 +123,47 @@ def test_a_language_list_without_a_directory_is_an_error() -> None:
         parse_tessdata("ara\neng\n")
 
 
+def listing_of(folder: Path) -> bytes:
+    return f'List of available languages in "{folder}/" (2):\nara\neng\n'.encode()
+
+
 def test_every_model_a_setting_loads_is_hashed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
     (tmp_path / "ara.traineddata").write_bytes(b"arabic weights")
     (tmp_path / "eng.traineddata").write_bytes(b"english weights")
-    listing = f'List of available languages in "{tmp_path}/" (2):\nara\neng\n'
-    monkeypatch.setattr(tesseract.subprocess, "run", fake_run(stdout=listing.encode()))
+    monkeypatch.setattr(tesseract.subprocess, "run", fake_run(stdout=listing_of(tmp_path)))
     assert model_hashes("ara") == {"ara": hashlib.sha256(b"arabic weights").hexdigest()}
     assert list(model_hashes("ara+eng")) == ["ara", "eng"]
+
+
+def test_the_requested_model_folder_is_used(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "ara.traineddata").write_bytes(b"best arabic weights")
+    monkeypatch.setenv("TESSDATA_PREFIX", str(tmp_path))
+    monkeypatch.setattr(tesseract.subprocess, "run", fake_run(stdout=listing_of(tmp_path)))
+    assert model_hashes("ara") == {"ara": hashlib.sha256(b"best arabic weights").hexdigest()}
+
+
+def test_a_silent_fallback_to_other_models_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Tesseract ignores a TESSDATA_PREFIX that does not exist and lists its own
+    # folder instead, which is how a run meant for the best models used the fast.
+    monkeypatch.setenv("TESSDATA_PREFIX", str(tmp_path / "tessdata_best"))
+    system = Path("/usr/share/tesseract-ocr/5/tessdata")
+    monkeypatch.setattr(tesseract.subprocess, "run", fake_run(stdout=listing_of(system)))
+    with pytest.raises(TesseractError, match="asks for the models in"):
+        model_hashes("ara")
+
+
+def test_a_missing_model_file_is_reported(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
+    monkeypatch.setattr(tesseract.subprocess, "run", fake_run(stdout=listing_of(tmp_path)))
+    with pytest.raises(TesseractError, match="does not exist"):
+        model_hashes("ara")
 
 
 def english_tesseract() -> bool:
