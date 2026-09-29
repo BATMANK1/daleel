@@ -23,6 +23,11 @@ What produced each result is recorded: the vLLM version and the model the
 server reports, and the model's revision, read from the Hugging Face cache, so
 the client runs on the machine that serves. The server does not report whether
 it quantized the model, so that is stated when the engine is built.
+
+A page larger than the model's pixel limit is scaled down to fit. vLLM sets
+aside memory for the largest image a request may hold, so a small GPU needs a
+lower limit, given to the server when it starts (--mm-processor-kwargs). The
+engine sends its own limit with every page, so the one recorded is the one used.
 """
 
 from __future__ import annotations
@@ -75,6 +80,11 @@ IMAGE_TOKENS = "<|img|><|imgpad|><|endofimg|>"
 
 _NAME = re.compile(r"[A-Za-z0-9_.-]+")
 
+# dots_mocr/utils/consts.py: the smallest image the model's processor takes,
+# and the largest it takes without scaling down.
+MIN_PIXELS = 3136
+MAX_PIXELS = 11289600
+
 
 class DotsError(RuntimeError):
     """The server could not be reached, refused a request, or gave an answer that cannot be read."""
@@ -87,6 +97,9 @@ class Settings:
     server: str = "http://localhost:8000"
     # vLLM's --quantization, as the server was started. vLLM does not report it.
     quantization: str = "none"
+    # The most pixels of a page the model sees: the model's image processor
+    # scales a larger page down to fit. None keeps the model's own limit.
+    max_pixels: int | None = None
     # The defaults of dots.mocr's parser, stated so that a change to them shows.
     temperature: float = 0.1
     top_p: float = 1.0
@@ -99,6 +112,8 @@ class Settings:
     def __post_init__(self) -> None:
         if not _NAME.fullmatch(self.quantization):
             raise ValueError(f"a quantization is a name such as fp8, not {self.quantization!r}")
+        if self.max_pixels is not None and self.max_pixels < MIN_PIXELS:
+            raise ValueError(f"max_pixels is at least {MIN_PIXELS}, not {self.max_pixels}")
 
 
 DEFAULT = Settings()
@@ -130,7 +145,7 @@ def chat_request(model: str, png: bytes, settings: Settings = DEFAULT) -> dict[s
         },
         {"type": "text", "text": IMAGE_TOKENS + LAYOUT_PROMPT},
     ]
-    return {
+    request: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": content}],
         "temperature": settings.temperature,
@@ -138,6 +153,10 @@ def chat_request(model: str, png: bytes, settings: Settings = DEFAULT) -> dict[s
         "max_completion_tokens": settings.max_tokens,
         "seed": settings.seed,
     }
+    if settings.max_pixels is not None:
+        # Sent with every page, so the limit a page was read at is the one recorded.
+        request["mm_processor_kwargs"] = {"max_pixels": settings.max_pixels}
+    return request
 
 
 def error_message(body: bytes) -> str:
@@ -412,6 +431,8 @@ class DotsEngine:
         tag = f"{self.name.rsplit('/', 1)[-1]}-{self.revision[:8]}-vllm{self.vllm}"
         if self.settings.quantization != "none":
             tag += f"-{self.settings.quantization}"
+        if self.settings.max_pixels is not None:
+            tag += f"-max{self.settings.max_pixels}px"
         return tag
 
     def describe(self) -> str:
@@ -421,10 +442,12 @@ class DotsEngine:
             if settings.quantization == "none"
             else f"quantization {settings.quantization}, as stated"
         )
+        pixels = MAX_PIXELS if settings.max_pixels is None else settings.max_pixels
         return (
             f"{self.name} revision {self.revision[:12]}; vLLM {self.vllm} at {self.server}, "
-            f"{weights}, context {self.context} tokens; layout prompt, temperature "
-            f"{settings.temperature:g}, top_p {settings.top_p:g}, seed {settings.seed}"
+            f"{weights}, context {self.context} tokens; layout prompt, pages of up to "
+            f"{pixels:,} pixels, temperature {settings.temperature:g}, "
+            f"top_p {settings.top_p:g}, seed {settings.seed}"
         )
 
     def recognize(self, png: bytes) -> Result:

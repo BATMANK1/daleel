@@ -78,6 +78,18 @@ def test_the_request_is_the_one_dots_mocr_s_parser_sends() -> None:
     assert body["model"] == MODEL
     assert (body["temperature"], body["top_p"], body["max_completion_tokens"]) == (0.1, 1.0, 32768)
     assert body["seed"] == 0
+    # The model's own pixel limit, which the server applies unless told otherwise.
+    assert "mm_processor_kwargs" not in body
+
+
+def test_a_pixel_limit_goes_with_every_page() -> None:
+    body = chat_request(MODEL, png_of("RGB"), Settings(max_pixels=4_000_000))
+    assert body["mm_processor_kwargs"] == {"max_pixels": 4_000_000}
+
+
+def test_a_pixel_limit_below_the_model_s_smallest_image_is_refused() -> None:
+    with pytest.raises(ValueError, match="max_pixels is at least 3136"):
+        Settings(max_pixels=784)
 
 
 def test_the_same_page_sent_twice_is_new_to_the_server_each_time() -> None:
@@ -246,20 +258,21 @@ def hub(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 def test_the_engine_reads_the_server_once_and_names_what_it_serves(hub: Path) -> None:
     server = FakeServer()
-    engine = DotsEngine(Settings(quantization="fp8"), fetch=server)
+    engine = DotsEngine(Settings(quantization="fp8", max_pixels=4_000_000), fetch=server)
     assert [url for url, _, _ in server.requests] == [f"{SERVER}/version", f"{SERVER}/v1/models"]
-    assert engine.tag() == "dots.mocr-01234567-vllm0.30.0-fp8"
+    assert engine.tag() == "dots.mocr-01234567-vllm0.30.0-fp8-max4000000px"
     assert engine.describe() == (
         "rednote-hilab/dots.mocr revision 0123456789ab; vLLM 0.30.0 at http://localhost:8000, "
-        "quantization fp8, as stated, context 16384 tokens; layout prompt, temperature 0.1, "
-        "top_p 1, seed 0"
+        "quantization fp8, as stated, context 16384 tokens; layout prompt, pages of up to "
+        "4,000,000 pixels, temperature 0.1, top_p 1, seed 0"
     )
 
 
-def test_an_unquantized_model_is_named_as_such(hub: Path) -> None:
+def test_the_model_s_own_limits_are_named_as_such(hub: Path) -> None:
     engine = DotsEngine(fetch=FakeServer())
     assert engine.tag() == "dots.mocr-01234567-vllm0.30.0"
     assert ", unquantized, " in engine.describe()
+    assert " pages of up to 11,289,600 pixels, " in engine.describe()
 
 
 def test_an_openai_base_url_names_the_same_server(hub: Path) -> None:
