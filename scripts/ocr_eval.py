@@ -4,7 +4,7 @@
     python3 scripts/ocr_eval.py tesseract [--lang ara] [--psm 3] [--dpi 300]
     python3 scripts/ocr_eval.py paddle [--device cpu] [--min-score 0] [--stretch 1] [--dpi 300]
     python3 scripts/ocr_eval.py dots [--server http://localhost:8000] [--quantization none]
-                                     [--dpi 200]
+                                     [--max-pixels N] [--dpi 200]
 
 Each run gives one engine's row of T2. Every page is rendered once with
 daleel.ocr.render and read once, and every piece of its ground truth in
@@ -142,6 +142,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=dots.DEFAULT.quantization,
         help="as passed to vllm serve, such as fp8 (default none)",
     )
+    served.add_argument(
+        "--max-pixels",
+        type=int,
+        default=None,
+        help="scale larger pages down to this many pixels, as the server allows",
+    )
     # dots.mocr's parser renders at 200 DPI; at 300 a page costs 2.25 times the image tokens.
     add_dpi(served, 200)
     return parser
@@ -152,7 +158,10 @@ def build_engine(args: argparse.Namespace) -> Engine:
         settings = tesseract.Settings(lang=args.lang, psm=args.psm, dpi=args.dpi)
         return tesseract.TesseractEngine(settings)
     if args.engine == "dots":
-        return dots.DotsEngine(dots.Settings(server=args.server, quantization=args.quantization))
+        settings = dots.Settings(
+            server=args.server, quantization=args.quantization, max_pixels=args.max_pixels
+        )
+        return dots.DotsEngine(settings)
     from daleel.ocr import paddle
 
     settings = paddle.Settings(
