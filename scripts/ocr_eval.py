@@ -2,6 +2,7 @@
 """Run an OCR engine on every page that has ground truth, and score what it reads.
 
     python3 scripts/ocr_eval.py tesseract [--lang ara] [--psm 3] [--dpi 300]
+    python3 scripts/ocr_eval.py paddle [--device cpu] [--dpi 300]
 
 Each run gives one engine's row of T2. Every page is rendered once with
 daleel.ocr.render and read once, and every piece of its ground truth in
@@ -114,12 +115,23 @@ def build_parser() -> argparse.ArgumentParser:
     tess = engines.add_parser("tesseract", parents=[common], help="Tesseract, through its CLI")
     tess.add_argument("--lang", default=tesseract.DEFAULT.lang)
     tess.add_argument("--psm", type=int, default=tesseract.DEFAULT.psm)
+    paddle = engines.add_parser("paddle", parents=[common], help="PaddleOCR (the paddle extra)")
+    paddle.add_argument("--device", default="cpu", help="cpu, or gpu:0 with paddlepaddle-gpu")
+    paddle.add_argument("--cpu-threads", type=int, default=10)
+    paddle.add_argument("--mkldnn", action=argparse.BooleanOptionalAction, default=True)
     return parser
 
 
 def build_engine(args: argparse.Namespace) -> Engine:
-    settings = tesseract.Settings(lang=args.lang, psm=args.psm, dpi=args.dpi)
-    return tesseract.TesseractEngine(settings)
+    if args.engine == "tesseract":
+        settings = tesseract.Settings(lang=args.lang, psm=args.psm, dpi=args.dpi)
+        return tesseract.TesseractEngine(settings)
+    from daleel.ocr import paddle
+
+    settings = paddle.Settings(
+        device=args.device, cpu_threads=args.cpu_threads, enable_mkldnn=args.mkldnn
+    )
+    return paddle.PaddleEngine(settings)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         engine = build_engine(args)
-    except tesseract.TesseractError as exc:
+    except (tesseract.TesseractError, ImportError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     tag = f"{engine.tag()}-{args.dpi}dpi"
