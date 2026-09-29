@@ -174,6 +174,29 @@ def build_engine(args: argparse.Namespace) -> Engine:
     return paddle.PaddleEngine(settings)
 
 
+Page = tuple[str, int]
+
+
+def read_pages(
+    engine: Engine, pngs: dict[Page, bytes], folder: Path
+) -> tuple[dict[Page, str], dict[Page, float]]:
+    """What the engine reads on each page, and how long each took, saved as it goes."""
+    first = next(iter(pngs))
+    engine.recognize(pngs[first])  # the untimed first read
+    folder.mkdir(parents=True, exist_ok=True)
+    outputs, seconds = {}, {}
+    for (doc, page), png in pngs.items():
+        result = engine.recognize(png)
+        outputs[doc, page], seconds[doc, page] = result.text, result.seconds
+        (folder / f"{doc}_p{page:02d}.txt").write_text(result.text, encoding="utf-8")
+        if result.response:
+            response = folder / f"{doc}_p{page:02d}.response.json"
+            response.write_text(result.response, encoding="utf-8")
+        if result.warnings:
+            print(f"{doc} page {page}: {result.warnings}")
+    return outputs, seconds
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -210,18 +233,11 @@ def main(argv: list[str] | None = None) -> int:
         (doc, page): render_page(RAW / f"{doc}.pdf", page, dpi=args.dpi).png()
         for doc, page in pages
     }
-    engine.recognize(pngs[pages[0]])  # the untimed first read
-    (OUTPUT / tag).mkdir(parents=True, exist_ok=True)
-    outputs, seconds = {}, {}
-    for doc, page in pages:
-        result = engine.recognize(pngs[doc, page])
-        outputs[doc, page], seconds[doc, page] = result.text, result.seconds
-        (OUTPUT / tag / f"{doc}_p{page:02d}.txt").write_text(result.text, encoding="utf-8")
-        if result.response:
-            response = OUTPUT / tag / f"{doc}_p{page:02d}.response.json"
-            response.write_text(result.response, encoding="utf-8")
-        if result.warnings:
-            print(f"{doc} page {page}: {result.warnings}")
+    try:
+        outputs, seconds = read_pages(engine, pngs, OUTPUT / tag)
+    except (tesseract.TesseractError, dots.DotsError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     print(
         f"{'ground truth':42} {'kind':7} {'chars':>6} {'CER raw':>7} {'CER norm':>8} "
