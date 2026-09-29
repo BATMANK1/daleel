@@ -7,11 +7,16 @@ The same engine version gives different text with different model files: the
 standard, fast and best Arabic models differ, and every distribution packages
 its own. A result is only reproducible with the model recorded, so each run
 records the version and the SHA-256 of the traineddata file it used.
+
+Tesseract ignores a TESSDATA_PREFIX that does not exist, with only a warning,
+and falls back to its own models, so a run meant for one model set can quietly
+use another. The model folder is therefore checked against the one requested.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import subprocess
 import time
@@ -112,14 +117,29 @@ def version(binary: str = BINARY) -> str:
     return parse_version(completed.stdout.decode() or completed.stderr.decode())
 
 
+def model_folder(binary: str = BINARY) -> Path:
+    """The folder Tesseract loads its models from, refusing a silent fallback."""
+    completed = _run([binary, "--list-langs"])
+    folder = parse_tessdata(completed.stdout.decode() or completed.stderr.decode())
+    requested = os.environ.get("TESSDATA_PREFIX")
+    if requested and Path(requested).expanduser().resolve() != folder.resolve():
+        raise TesseractError(
+            f"TESSDATA_PREFIX asks for the models in {requested}, "
+            f"but Tesseract loads them from {folder}"
+        )
+    return folder
+
+
 def model_hashes(lang: str, binary: str = BINARY) -> dict[str, str]:
     """The SHA-256 of each traineddata file Tesseract loads for a language setting.
 
     A setting such as ara+eng loads one model per language, so each is hashed.
     """
-    completed = _run([binary, "--list-langs"])
-    folder = parse_tessdata(completed.stdout.decode() or completed.stderr.decode())
-    return {
-        name: hashlib.sha256((folder / f"{name}.traineddata").read_bytes()).hexdigest()
-        for name in lang.split("+")
-    }
+    folder = model_folder(binary)
+    hashes = {}
+    for name in lang.split("+"):
+        model = folder / f"{name}.traineddata"
+        if not model.is_file():
+            raise TesseractError(f"{model} does not exist")
+        hashes[name] = hashlib.sha256(model.read_bytes()).hexdigest()
+    return hashes

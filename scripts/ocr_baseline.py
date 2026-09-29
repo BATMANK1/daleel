@@ -122,8 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: missing from {RAW}: {', '.join(missing)}", file=sys.stderr)
         return 2
 
-    engine = tesseract.version()
-    models = tesseract.model_hashes(settings.lang)
+    try:
+        engine = tesseract.version()
+        models = tesseract.model_hashes(settings.lang)
+    except tesseract.TesseractError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     # The model files are named in the tag because the same language can come
     # from Tesseract's standard, fast or best set, which read differently.
     model_tag = "+".join(sha[:8] for sha in models.values())
