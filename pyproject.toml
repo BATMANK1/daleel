@@ -15,6 +15,11 @@ dev = [
   "ruff",
   "pre-commit",
 ]
+# The PaddleOCR engine, pinned: its results are only comparable at one version.
+paddle = [
+  "paddleocr==3.7.0",
+  "paddlepaddle==3.3.1",
+]
 
 [project.scripts]
 daleel = "daleel.cli:main"
