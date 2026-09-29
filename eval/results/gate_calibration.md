@@ -16,9 +16,9 @@ locally and only its numbers are published here.
 
 ## Setup
 
-- **Ground truth:** five pages, one per document, each transcribed
-  independently by two annotators under [`eval/ANNOTATION.md`](../ANNOTATION.md)
-  and reconciled against the page. By precision against that ground truth, two
+- **Ground truth:** five pages, one per document, each transcribed by hand
+  under [`eval/ANNOTATION.md`](../ANNOTATION.md), checked against a second
+  transcription made independently, and reconciled against the page. By precision against that ground truth, two
   pages have sound text layers and three have broken ones.
 - **Lexicon:** the CAMeL Lab's Modern Standard Arabic frequency list
   (Khalifa et al., 2021), CC BY-SA 4.0, fetched by `scripts/fetch_lexicon.py`
