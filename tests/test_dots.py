@@ -11,6 +11,7 @@ import base64
 import io
 import json
 import socket
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -418,9 +419,22 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+class Server(ThreadingHTTPServer):
+    """The local server, which finishes every request before it closes."""
+
+    # Joined on close, so a slow answer ends inside its own test.
+    daemon_threads = False
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        # The timeout test's client stops listening on purpose, so answering it
+        # fails; any other error is still printed.
+        if not isinstance(sys.exc_info()[1], ConnectionError):
+            super().handle_error(request, client_address)
+
+
 @pytest.fixture
 def local_server() -> Iterator[str]:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = Server(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
