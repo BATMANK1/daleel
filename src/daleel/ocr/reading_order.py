@@ -51,12 +51,14 @@ def same_row(a: Box, b: Box) -> bool:
 def rows(boxes: Iterable[Box]) -> list[list[Box]]:
     """Boxes grouped into rows, top to bottom, each row ordered right to left.
 
-    A box joins the row above it when it shares a row with that row's first
-    box; otherwise it starts a new row.
+    A box joins the row above it when it shares a row with that row's tallest
+    box; otherwise it starts a new row. The tallest box is the one most likely
+    to be a line of text: a small box read from a background graphic, sitting
+    a little above a line, would split the line if it anchored the row.
     """
     found: list[list[Box]] = []
     for box in sorted(boxes, key=lambda b: b.middle):
-        if found and same_row(found[-1][0], box):
+        if found and same_row(max(found[-1], key=lambda b: b.bottom - b.top), box):
             found[-1].append(box)
         else:
             found.append([box])

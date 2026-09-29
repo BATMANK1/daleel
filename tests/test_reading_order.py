@@ -35,6 +35,16 @@ def test_boxes_a_little_higher_or_lower_share_a_row() -> None:
     assert rows([short, tall]) == [[tall, short]]
 
 
+def test_a_small_box_above_a_line_does_not_split_it() -> None:
+    # Page 21, item 6: PaddleOCR read a background stroke as "II" just above
+    # the line, and the line's first word as a box of its own. Anchored on the
+    # stroke, the row took the first word and left the rest for a new row.
+    stroke = box("II", 700, 1870, 720, 1905)
+    first_word = box("ألا", 2180, 1880, 2340, 1930)
+    rest = box("يقل تقدير الطالب", 130, 1890, 2150, 1945)
+    assert rows([rest, first_word, stroke]) == [[first_word, rest, stroke]]
+
+
 def test_a_badge_below_a_line_starts_its_own_row() -> None:
     line = box("نسبة الغياب", 400, 1000, 2340, 1055)
     badge = box("01", 1200, 1100, 1260, 1140)
