@@ -201,6 +201,8 @@ daleel gate data/raw/                             # verdicts per document
 daleel gate data/raw/ --pages                     # verdicts per page, with reasons
 sha256sum -c data/SHA256SUMS                      # check your copies of the documents
 python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made of
+python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
+python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
 ```
 
@@ -220,10 +222,13 @@ many organisations that would force this repository's own licence to match.
 
 ## Results
 
-The extraction inventory above (table T1), and the quality gate's calibration
-in [`eval/results/gate_calibration.md`](eval/results/gate_calibration.md).
-Retrieval, OCR and arm-comparison tables land here as that work completes.
-Nothing is published here before it is measured.
+The extraction inventory above (table T1), the quality gate's calibration in
+[`eval/results/gate_calibration.md`](eval/results/gate_calibration.md), and the
+OCR engines compared in [`eval/results/ocr.md`](eval/results/ocr.md) (table T2):
+dots.mocr, a vision language model, reads Arabic about three times as
+accurately as Tesseract or PaddleOCR, and invented a second date in every date
+box of the academic calendar. Retrieval and arm-comparison tables land here as
+that work completes. Nothing is published here before it is measured.
 
 ## Licence
 
