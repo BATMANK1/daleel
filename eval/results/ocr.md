@@ -27,7 +27,8 @@ annotator's machine, so only their scores are published here.
 - **Scores:**
   - *CER raw* and *CER normalized*: character edits per character of ground
     truth, on pages and regions, the normalized form after the normalization
-    retrieval uses.
+    retrieval uses, which also writes Arabic-Indic digits and Arabic
+    punctuation in their ASCII forms.
   - *WER normalized*: the same over words.
   - *Words missed*: the share of the ground truth's words found nowhere in the
     engine's output, as a bag, on every piece. Tables are scored by words
@@ -61,9 +62,9 @@ annotator's machine, so only their scores are published here.
 
 | Engine | CER raw | CER norm | WER norm | Words missed | Words added | s / page | Layout-aware |
 |---|---|---|---|---|---|---|---|
-| Tesseract, `ara` | 12.5% | 12.1% | 16.6% | 25.1% | 32.2% | 1.7 | no |
-| Tesseract, `ara+eng` | 15.0% | 14.8% | 19.5% | 16.2% | 15.7% | 2.8 | no |
-| PaddleOCR, min score 0.5 | 12.3% | 12.1% | 19.5% | 8.1% | 14.3% | 11.1 | line boxes |
+| Tesseract, `ara` | 12.5% | 11.7% | 16.6% | 24.6% | 32.2% | 1.7 | no |
+| Tesseract, `ara+eng` | 15.0% | 14.4% | 19.5% | 15.7% | 15.5% | 2.8 | no |
+| PaddleOCR, min score 0.5 | 12.3% | 12.1% | 19.5% | 7.9% | 14.3% | 11.1 | line boxes |
 | **dots.mocr, FP8** | **4.4%** | **4.4%** | **5.6%** | **4.3%** | 22.1% | 120.6 to 264.4 | **yes** |
 
 *Layout-aware:* whether the output keeps the page's structure. Tesseract gives
@@ -96,6 +97,13 @@ table, page header, picture) and each table as HTML.
   of the ground truth, but it is readable, and dots.mocr reads it perfectly as
   a page header. That is every one of its 64 edits on the guidance page. With
   the logo taken out of its output, its CER falls from 4.4% to 1.3%.
+- **Normalization forgives little, most of it Tesseract's.** Of Tesseract
+  `ara`'s 720 character edits it forgives 48: 26 commas, because Tesseract
+  writes the pages' Arabic commas as Latin ones, 10 yaa and alef maqsura
+  swapped, 8 diacritics and 4 hamzas on alef. It forgives 12 of PaddleOCR's
+  710 edits and 3 of dots.mocr's 256. Digits change no CER here: every
+  Arabic-Indic digit in the ground truth is in a table, and tables are scored
+  by words.
 
 ## 1. What each engine gets wrong
 
@@ -109,10 +117,10 @@ the student charter.
 | dots.mocr | 3 | أسبوع read as أสوع, with a Thai letter; لتؤكد as لتأكد; ويمثل as وبمثل |
 
 - **Tesseract loses whole blocks on designed pages.** It skips text it does not
-  recognize as text: 25.1% of all words missed, and 55.4% of the calendar's and
-  69.1% of the grade table's. Reading `ara` alone, it writes English as
+  recognize as text: 24.6% of all words missed, and 55.4% of the calendar's and
+  64.2% of the grade table's. Reading `ara` alone, it writes English as
   Arabic-looking garbage. Adding `eng` recovers the English and halves the
-  words added, 32.2% to 15.7%, at a cost to the Arabic: CER rises from 12.5%
+  words added, 32.2% to 15.5%, at a cost to the Arabic: CER rises from 12.5%
   to 15.0%, and on the running-text regions from 2.9% to 4.1%.
 - **PaddleOCR keeps the blocks but clips short words.** Its misses are a third
   of Tesseract's, yet on running text it makes more word errors, 46 to 26.
@@ -203,9 +211,9 @@ that answers students' questions about dates and deadlines.
   widening each line image before recognition, to give the recognizer more
   steps per letter. Stretching the whole page to 1.5 times its width
   approximates that. With the minimum score in place it raised CER from 12.3%
-  to 12.8% and words missed from 8.1% to 9.7%, and took 42% longer. Without
+  to 12.8% and words missed from 7.9% to 9.4%, and took 42% longer. Without
   the minimum score it lowered CER a little, 13.2% to 12.8%, but still missed
-  more words, 9.5%. The issue's own fix, per line and capped, is not tested.
+  more words, 9.2%. The issue's own fix, per line and capped, is not tested.
 - **PaddleOCR's lines are put in reading order by this project.** PaddleOCR
   sorts the boxes of a row left to right. `daleel.ocr.reading_order` puts two
   boxes in one row when each one's vertical middle lies within the other's
@@ -257,6 +265,40 @@ that answers students' questions about dates and deadlines.
 - Timing is from one machine running WSL 2, with the GPU shared with the
   Windows desktop, and dots.mocr's speed more than halved between two runs of
   the same pages. Its seconds are a range, not a measurement of the model.
+
+## 6. Every page
+
+T2 combines these rows, each piece counting by its length. PaddleOCR is the run
+with a minimum score of 0.5.
+
+Pages and regions, CER normalized / WER normalized, in percent:
+
+| Ground truth | Kind | Characters | Tesseract `ara` | Tesseract `ara+eng` | PaddleOCR | dots.mocr |
+|---|---|---|---|---|---|---|
+| Guidance manual, page 2 | page | 222 | 65.3 / 68.6 | 64.4 / 62.9 | 32.4 / 34.3 | 28.8 / 25.7 |
+| Library services, page 10 | page | 329 | 9.7 / 23.4 | 18.5 / 29.8 | 4.3 / 21.3 | 2.1 / 14.9 |
+| Regulations, page 5 | region | 466 | 3.0 / 8.3 | 3.0 / 8.3 | 6.7 / 16.7 | 0.0 / 0.0 |
+| Regulations, page 21 | region | 1,795 | 2.0 / 5.4 | 3.6 / 6.4 | 5.3 / 9.0 | 0.5 / 0.3 |
+| Orientation, page 3 | page | 433 | 14.1 / 12.7 | 13.4 / 15.5 | 18.7 / 22.5 | 16.4 / 18.3 |
+| Student charter, page 4 | region | 665 | 1.1 / 2.9 | 2.6 / 3.9 | 2.3 / 5.9 | 0.3 / 2.0 |
+| Student guide, page 30 | page | 1,853 | 20.5 / 28.2 | 25.4 / 34.6 | 21.2 / 32.4 | 5.4 / 6.7 |
+
+Every piece, words missed / words added, in percent. Words added are counted
+only on whole pages, the calendar's on its table's row.
+
+| Ground truth | Kind | Tesseract `ara` | Tesseract `ara+eng` | PaddleOCR | dots.mocr |
+|---|---|---|---|---|---|
+| Calendar, page 1: the table | table | 55.4 / 58.3 | 15.3 / 21.8 | 11.5 / 13.0 | 15.0 / 37.7 |
+| Calendar, page 1: text around the table | page text | 38.1 | 14.3 | 14.3 | 0.0 |
+| Guidance manual, page 2 | page | 25.7 / 25.7 | 25.7 / 21.2 | 2.9 / 26.1 | 0.0 / 20.5 |
+| Library services, page 10 | page | 19.1 / 20.8 | 14.9 / 16.7 | 17.0 / 18.8 | 8.5 / 14.0 |
+| Regulations, page 5 | region | 1.4 | 1.4 | 4.2 | 0.0 |
+| Regulations, page 21 | region | 3.5 | 4.5 | 5.4 | 0.3 |
+| Regulations, page 27: grade table | table | 64.2 | 54.3 | 11.7 | 4.9 |
+| Regulations, page 33: fees table | table | 2.6 | 6.0 | 10.3 | 0.9 |
+| Orientation, page 3 | page | 12.7 / 0.0 | 12.7 / 3.1 | 4.2 / 18.1 | 0.0 / 11.2 |
+| Student charter, page 4 | region | 2.9 | 3.9 | 2.9 | 2.0 |
+| Student guide, page 30 | page | 17.3 / 8.8 | 17.9 / 9.5 | 6.1 / 12.5 | 1.3 / 3.8 |
 
 ## Reproducing
 
