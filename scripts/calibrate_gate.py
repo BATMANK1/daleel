@@ -45,7 +45,7 @@ from daleel.ingest.lexicon import LEXICON_MEMBER, LEXICON_ZIP, load_lexicon, rea
 from daleel.ingest.metadata import read_metadata
 from daleel.ingest.quality import arabic_tokens, measure, single_letter_share, token_validity
 from daleel.ingest.router import route
-from daleel.normalize.arabic import for_comparison
+from daleel.normalize.arabic import fold_presentation_forms, for_comparison, strip_invisible
 
 RAW = Path("data/raw")
 GROUND_TRUTH = Path("data/interim/ground_truth")
@@ -114,6 +114,15 @@ def overlap(layer: list[str], truth: list[str]) -> tuple[float | None, float | N
     return precision, recall
 
 
+def as_printed(text: str) -> str:
+    """Extracted text with only its encoding unified, to compare with runs as printed.
+
+    Normalization would turn Arabic-Indic digits into ASCII, so a run the page
+    prints in Arabic-Indic digits could never be found intact in normalized text.
+    """
+    return fold_presentation_forms(strip_invisible(text))
+
+
 def runs_survive(truth: str, text: str) -> tuple[int, int, int, int]:
     """Of the page's distinct digit and Latin runs: total, intact, reversed, missing.
 
@@ -148,10 +157,11 @@ def section_backends() -> None:
         truth = arabic_tokens(for_comparison(truth_text))
         bracketed = set(BRACKETED.findall(truth_text))
         for name, extract in BACKENDS.items():
-            text = for_comparison(extract(doc, page))
-            precision, recall = overlap(arabic_tokens(text), truth)
-            total, intact, backwards, missing = runs_survive(truth_text, text)
-            exact = sum(b in text for b in bracketed)
+            raw = extract(doc, page)
+            precision, recall = overlap(arabic_tokens(for_comparison(raw)), truth)
+            printed = as_printed(raw)
+            total, intact, backwards, missing = runs_survive(truth_text, printed)
+            exact = sum(b in printed for b in bracketed)
             print(
                 f"{doc + f'_p{page:02d}':32} {name:15} {pct(precision)} {pct(recall)} | "
                 f"{total:>4} {intact:>6} {backwards:>8} {missing:>7} | "
