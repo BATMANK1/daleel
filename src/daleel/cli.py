@@ -11,11 +11,20 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from daleel.ingest.extract import BACKENDS
-from daleel.ingest.gate import PageVerdict, Verdict, gate_document, load_gate_lexicon
+from daleel.ingest.gate import (
+    PageVerdict,
+    Verdict,
+    document_path,
+    gate_document,
+    load_gate_lexicon,
+)
 from daleel.ingest.inventory import format_table, inventory_dir, to_json
 from daleel.ingest.lexicon import LEXICON_ZIP
 from daleel.ingest.metadata import PdfMetadata, read_metadata
-from daleel.ingest.router import route
+from daleel.ingest.records import RECORDS, PageRecord, extract_document, write_records
+from daleel.ingest.router import ExtractionPath, route
+from daleel.ocr import dots
+from daleel.ocr.cache import CACHE, CachedReader
 
 # --- shared ------------------------------------------------------------------
 
@@ -193,20 +202,16 @@ _GATE_PAGE_COLUMNS: tuple[tuple[str, str], ...] = (
 def gate_summary(name: str, route_path: str, verdicts: Sequence[PageVerdict]) -> dict:
     """One document's verdicts counted, and whether they agree with the router.
 
-    The gate says "text_layer" when more than half of the pages whose text layer
-    holds Arabic words are trusted. Pages with no Arabic in their text layer,
-    such as covers drawn as shapes, say nothing about whether the layer works:
-    they are counted in their own column, and go to OCR regardless.
+    Pages with no Arabic in their text layer are counted in their own column,
+    and go to OCR regardless of the path the document takes.
     """
     counts = Counter(verdict.decision.verdict for verdict in verdicts)
-    trusted = counts[Verdict.TRUSTED]
-    with_arabic = len(verdicts) - counts[Verdict.NO_ARABIC_TEXT]
-    gate_path = "text_layer" if trusted * 2 > with_arabic else "ocr"
+    gate_path = document_path(verdicts).value
     return {
         "file": name,
         "route": route_path,
         "pages": len(verdicts),
-        "trusted": trusted,
+        "trusted": counts[Verdict.TRUSTED],
         "untrusted": counts[Verdict.UNTRUSTED],
         "no_arabic_text": counts[Verdict.NO_ARABIC_TEXT],
         "gate_path": gate_path,
@@ -284,12 +289,170 @@ def _run_gate(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- extract -----------------------------------------------------------------
+
+_EXTRACT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("file", "file"),
+    ("pages", "pages"),
+    ("document", "document"),
+    ("text_layer", "text layer"),
+    ("ocr", "OCR"),
+    ("records", "records"),
+)
+
+
+def extract_summary(name: str, records: Sequence[PageRecord], out: Path | None) -> dict:
+    """One document's pages counted by the method that extracted them, and where they went."""
+    methods = Counter(record.method for record in records)
+    return {
+        "file": name,
+        "pages": len(records),
+        "document": records[0].document.value if records else None,
+        "text_layer": methods[ExtractionPath.TEXT_LAYER],
+        "ocr": methods[ExtractionPath.OCR],
+        "records": None if out is None else str(out),
+    }
+
+
+def _add_extract_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "extract",
+        help="extract every page's text, from its text layer or by OCR",
+        description=(
+            "Judge every page with the quality gate and extract its text: from the text "
+            "layer where the gate trusts the page and its document, otherwise by OCR with "
+            "dots.mocr on a running vLLM server. Each document's pages are written to "
+            "OUT/<document>.jsonl, one record per line. OCR readings are cached, so a "
+            "second run reads no page again and an interrupted run resumes where it stopped."
+        ),
+    )
+    parser.add_argument("path", type=Path, help="directory containing PDFs")
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="NAME",
+        help="only these documents, named as their files are without .pdf",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=RECORDS, help="folder for the records (default: %(default)s)"
+    )
+    parser.add_argument(
+        "--cache", type=Path, default=CACHE, help="folder for OCR readings (default: %(default)s)"
+    )
+    parser.add_argument(
+        "--server",
+        default=dots.DEFAULT.server,
+        help="the vLLM server serving dots.mocr (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--quantization",
+        default=dots.DEFAULT.quantization,
+        help="as passed to vllm serve, such as fp8 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--max-pixels",
+        type=int,
+        default=None,
+        help="scale larger pages down to this many pixels, as the server allows",
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=200,
+        help="resolution to render pages at for OCR (default: %(default)s, as dots.mocr's)",
+    )
+    parser.add_argument(
+        "--lexicon",
+        type=Path,
+        default=LEXICON_ZIP,
+        help="frequency-list zip (default: %(default)s)",
+    )
+    parser.add_argument("--json", action="store_true", help="emit the summary as JSON")
+
+
+def _run_extract(args: argparse.Namespace) -> int:
+    error = _directory_error(args.path)
+    if error is not None:
+        return error
+
+    pdfs = _pdfs_in(args.path)
+    if not pdfs:
+        return _report_no_pdfs(args.path)
+
+    if args.only:
+        by_name = {pdf.stem: pdf for pdf in pdfs}
+        unknown = [name for name in args.only if name not in by_name]
+        if unknown:
+            print(
+                f"error: no {', '.join(unknown)} in {args.path}; "
+                f"its documents are {', '.join(by_name)}",
+                file=sys.stderr,
+            )
+            return 2
+        pdfs = [by_name[name] for name in args.only]
+
+    if not args.lexicon.is_file():
+        print(
+            f"error: no lexicon at {args.lexicon}. Fetch it with: python3 scripts/fetch_lexicon.py",
+            file=sys.stderr,
+        )
+        return 2
+    if args.dpi < 1:
+        print(f"error: a resolution must be positive, not {args.dpi}", file=sys.stderr)
+        return 2
+    try:
+        settings = dots.Settings(
+            server=args.server, quantization=args.quantization, max_pixels=args.max_pixels
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    lexicon = load_gate_lexicon(args.lexicon)
+    reader: CachedReader | None = None
+    hits = 0
+
+    # The server is only asked for when a page needs OCR, so a document the
+    # text layer serves throughout is extracted without one.
+    def ocr() -> CachedReader:
+        nonlocal reader
+        if reader is None:
+            reader = CachedReader(dots.DotsEngine(settings), args.cache, dpi=args.dpi)
+            print(f"OCR: {reader.describe()}; pages at {args.dpi} DPI", file=sys.stderr)
+        return reader
+
+    def report(record: PageRecord) -> None:
+        nonlocal hits
+        if record.ocr is None or reader is None:
+            return
+        how = "from the cache" if reader.hits > hits else f"read in {record.ocr.seconds:.0f} s"
+        hits = reader.hits
+        print(f"{record.doc_id} page {record.page}: {how}", file=sys.stderr, flush=True)
+
+    summaries = []
+    for pdf in pdfs:
+        try:
+            records = extract_document(pdf, lexicon, ocr, on_record=report)
+        except dots.DotsError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        out = write_records(records, args.out) if records else None
+        summaries.append(extract_summary(pdf.name, records, out))
+
+    if args.json:
+        print(json.dumps(summaries, indent=2, ensure_ascii=False))
+    else:
+        print(_format_rows(summaries, _EXTRACT_COLUMNS))
+    return 0
+
+
 # --- entry point -------------------------------------------------------------
 
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "inventory": _run_inventory,
     "route": _run_route,
     "gate": _run_gate,
+    "extract": _run_extract,
 }
 
 
@@ -302,6 +465,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_inventory_parser(subparsers)
     _add_route_parser(subparsers)
     _add_gate_parser(subparsers)
+    _add_extract_parser(subparsers)
     return parser
 
 

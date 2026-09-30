@@ -15,7 +15,8 @@ the threshold provisional: more ground truth would narrow it.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -23,6 +24,7 @@ from pathlib import Path
 from daleel.ingest.extract import page_texts
 from daleel.ingest.lexicon import LEXICON_ZIP, load_lexicon
 from daleel.ingest.quality import PageQuality, measure
+from daleel.ingest.router import ExtractionPath
 
 # Sound pages scored at least 99% and broken ones at most 88%. The threshold
 # sits above that gap's midpoint on purpose: passing a broken page puts wrong
@@ -124,13 +126,32 @@ class PageVerdict:
         return {"page": self.page, **self.decision.to_dict(), **self.quality.to_dict()}
 
 
+def judge_pages(texts: Sequence[str], lexicon: frozenset[str]) -> list[PageVerdict]:
+    """Measure and judge a document's pages from their text layers, numbered from 1."""
+    verdicts = []
+    for number, text in enumerate(texts, start=1):
+        quality = measure(text, lexicon)
+        verdicts.append(PageVerdict(page=number, quality=quality, decision=decide(quality)))
+    return verdicts
+
+
 def gate_document(path: Path, lexicon: frozenset[str]) -> list[PageVerdict]:
     """Extract, measure and judge every page of a PDF, the way the gate was calibrated.
 
     Pass the lexicon from load_gate_lexicon: the threshold means nothing with any other.
     """
-    verdicts = []
-    for number, text in enumerate(page_texts(path), start=1):
-        quality = measure(text, lexicon)
-        verdicts.append(PageVerdict(page=number, quality=quality, decision=decide(quality)))
-    return verdicts
+    return judge_pages(page_texts(path), lexicon)
+
+
+def document_path(verdicts: Sequence[PageVerdict]) -> ExtractionPath:
+    """The path a whole document takes: its text layer when most of it can be trusted.
+
+    That is when more than half of the pages whose text layer holds Arabic words
+    are trusted. Pages with no Arabic in their text layer, such as covers drawn
+    as shapes, say nothing about whether the layer works, so they do not count.
+    """
+    counts = Counter(verdict.decision.verdict for verdict in verdicts)
+    with_arabic = len(verdicts) - counts[Verdict.NO_ARABIC_TEXT]
+    if counts[Verdict.TRUSTED] * 2 > with_arabic:
+        return ExtractionPath.TEXT_LAYER
+    return ExtractionPath.OCR

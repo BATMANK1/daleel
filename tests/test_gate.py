@@ -19,12 +19,15 @@ from daleel.ingest.gate import (
     MIN_ARABIC_WORDS,
     MIN_TOKEN_VALIDITY,
     RULES,
+    PageVerdict,
     Verdict,
     decide,
+    document_path,
     gate_document,
     load_gate_lexicon,
 )
 from daleel.ingest.quality import PageQuality
+from daleel.ingest.router import ExtractionPath
 
 SOUND = PageQuality(
     content_chars=1400,
@@ -154,3 +157,29 @@ def test_every_page_of_a_document_gets_a_numbered_verdict(make_pdf: Callable[...
     verdicts = gate_document(make_pdf(["first page", ""]), frozenset())
     assert [v.page for v in verdicts] == [1, 2]
     assert {v.decision.verdict for v in verdicts} == {Verdict.NO_ARABIC_TEXT}
+
+
+def _judged(*validities: float | None) -> list[PageVerdict]:
+    pages = []
+    for number, validity in enumerate(validities, start=1):
+        quality = replace(
+            SOUND, arabic_tokens=0 if validity is None else 290, token_validity=validity
+        )
+        pages.append(PageVerdict(page=number, quality=quality, decision=decide(quality)))
+    return pages
+
+
+@pytest.mark.parametrize(
+    ("validities", "path"),
+    [
+        ((1.0, 1.0, 0.5), ExtractionPath.TEXT_LAYER),
+        ((1.0, 0.5), ExtractionPath.OCR),
+        ((1.0, None, None, None), ExtractionPath.TEXT_LAYER),
+        ((None, None), ExtractionPath.OCR),
+    ],
+    ids=["most_trusted", "half_trusted", "covers_do_not_count", "no_arabic_at_all"],
+)
+def test_a_document_takes_its_text_layer_when_most_pages_with_arabic_are_trusted(
+    validities: tuple[float | None, ...], path: ExtractionPath
+) -> None:
+    assert document_path(_judged(*validities)) is path
