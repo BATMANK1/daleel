@@ -27,6 +27,7 @@ import pdfplumber
 from daleel.ingest.extract import PageCallback, page_texts
 from daleel.ingest.metadata import metadata_from
 from daleel.normalize.arabic import (
+    ARABIC_INDIC_DIGIT_RANGES,
     BIDI_CONTROLS,
     DIACRITIC_RANGES,
     PRESENTATION_FORM_RANGES,
@@ -36,8 +37,6 @@ from daleel.normalize.arabic import (
 
 # Base Arabic letters, and the extended set used for non-Arabic languages.
 ARABIC_LETTER_RANGES = ((0x0620, 0x064A), (0x0671, 0x06D3))
-
-ARABIC_INDIC_DIGIT_RANGES = ((0x0660, 0x0669), (0x06F0, 0x06F9))
 
 REPLACEMENT_CHAR = 0xFFFD
 
