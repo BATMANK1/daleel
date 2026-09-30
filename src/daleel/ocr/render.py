@@ -27,6 +27,12 @@ A4_LONG_EDGE = 841.89  # points
 # small is a drawing of a larger one, as in organizational_regulations.pdf.
 SMALLEST_REAL_PAGE = 2 * POINTS_PER_INCH
 
+# The version of how render_page draws a page. The OCR cache keys on it with
+# pypdfium2's version and the resolution, so a change to render_page that
+# changes any page's pixels must raise it, or pages would be read back that
+# were read from other pixels.
+RENDERING = 1
+
 
 def printed_scale(width: float, height: float) -> float:
     """How many times larger than its declared size, in points, a page prints."""
@@ -42,6 +48,9 @@ class RenderedPage:
 
     image: Image.Image
     dpi: int
+    # Width and height as the PDF declares them, in points: the page's own
+    # coordinates, which pdfplumber measures its characters in.
+    page_size: tuple[float, float]
 
     def png(self) -> bytes:
         """The image as PNG, stamped with its resolution so no engine has to guess it."""
@@ -74,4 +83,4 @@ def render_page(path: Path, page: int, *, dpi: int = 300) -> RenderedPage:
             pdf_page.close()
     finally:
         document.close()
-    return RenderedPage(image=image, dpi=dpi)
+    return RenderedPage(image=image, dpi=dpi, page_size=(width, height))
