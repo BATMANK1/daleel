@@ -43,7 +43,12 @@ class Engine(Protocol):
     """One engine, configured once: everything that can change its output is fixed when built."""
 
     def tag(self) -> str:
-        """A short name for this configuration, used for the folder its output goes to."""
+        """A short name for this configuration, used for the folder its output goes to.
+
+        It names the engine's version, its models and the settings that change
+        what it reads, since the OCR cache reads a page back only under the
+        same tag, for the same page rendered the same way.
+        """
         ...
 
     def describe(self) -> str:

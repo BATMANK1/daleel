@@ -43,6 +43,12 @@ def test_a_page_drawn_at_a_tenth_renders_as_a4_at_300_dpi(
     assert height == pytest.approx(3508, abs=1)
 
 
+def test_the_page_keeps_its_declared_size_in_points(make_pdf: Callable[..., Path]) -> None:
+    # The page's own coordinates, even where it prints ten times larger.
+    rendered = render_page(make_pdf([""], size=REGULATIONS_PAGE), 1, dpi=72)
+    assert rendered.page_size == pytest.approx(REGULATIONS_PAGE, abs=0.01)
+
+
 def test_the_text_is_drawn(make_pdf: Callable[..., Path]) -> None:
     blank = render_page(make_pdf([""]), 1, dpi=72).image.convert("L")
     text = render_page(make_pdf(["HELLO"]), 1, dpi=72).image.convert("L")
