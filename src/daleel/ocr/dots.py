@@ -19,6 +19,12 @@ are kept, as the ground truth keeps them. When the answer is not valid JSON, its
 complete blocks are recovered and repeats removed, as dots.mocr's own cleaner
 does (dots_mocr/utils/output_cleaner.py).
 
+The blocks are kept too, in reading order, each with its category and box. The
+model measures a box on the image as its processor resized it: each side
+rounded to a multiple of 28 pixels, the whole scaled to fit its pixel limits.
+So a box is divided by that size, which makes it a fraction of the page, as
+dots.mocr's own parser maps boxes back (dots_mocr/utils/layout_utils.py).
+
 What produced each result is recorded: the vLLM version and the model the
 server reports, and the model's revision, read from the Hugging Face cache, so
 the client runs on the machine that serves. The server does not report whether
@@ -37,6 +43,7 @@ import html
 import http.client
 import io
 import json
+import math
 import os
 import re
 import time
@@ -52,7 +59,7 @@ from typing import Any
 
 from PIL import Image
 
-from daleel.ocr.engine import Result
+from daleel.ocr.engine import Block, Box, Result
 
 # prompt_layout_all_en in dots_mocr/utils/prompts.py, verbatim.
 LAYOUT_PROMPT = """Please output the layout information from the PDF image, including each layout element's bbox, its category, and the corresponding text content within the bbox.
@@ -84,6 +91,9 @@ _NAME = re.compile(r"[A-Za-z0-9_.-]+")
 # and the largest it takes without scaling down.
 MIN_PIXELS = 3136
 MAX_PIXELS = 11289600
+# Each image token covers a square this many pixels wide: 14-pixel patches,
+# merged two by two. The processor resizes every image to multiples of it.
+PIXELS_PER_TOKEN = 28
 
 
 class DotsError(RuntimeError):
@@ -136,6 +146,33 @@ def rgb_png(png: bytes) -> bytes:
     buffer = io.BytesIO()
     rgb.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def model_size(width: int, height: int, max_pixels: int | None = None) -> tuple[int, int]:
+    """The width and height the model's processor resizes an image to.
+
+    This is smart_resize in dots_mocr/utils/image_utils.py, as in Qwen2-VL: each
+    side is rounded to a multiple of 28 pixels, then the image is scaled down to
+    fit the pixel limit, or up to reach the smallest image, keeping its shape as
+    nearly as multiples of 28 allow.
+    """
+    limit = MAX_PIXELS if max_pixels is None else max_pixels
+    step = PIXELS_PER_TOKEN
+    wide = max(step, round(width / step) * step)
+    high = max(step, round(height / step) * step)
+    if wide * high > limit:
+        beta = math.sqrt(width * height / limit)
+        wide = max(step, math.floor(width / beta / step) * step)
+        high = max(step, math.floor(height / beta / step) * step)
+    elif wide * high < MIN_PIXELS:
+        beta = math.sqrt(MIN_PIXELS / (width * height))
+        wide = math.ceil(width * beta / step) * step
+        high = math.ceil(height * beta / step) * step
+        if wide * high > limit:
+            beta = math.sqrt(wide * high / limit)
+            wide = max(step, math.floor(wide / beta / step) * step)
+            high = max(step, math.floor(high / beta / step) * step)
+    return wide, high
 
 
 def chat_request(model: str, png: bytes, settings: Settings = DEFAULT) -> dict[str, Any]:
@@ -379,25 +416,67 @@ def recovered(answer: str) -> tuple[list[dict[str, Any]], int]:
     return deduplicated(blocks), lost
 
 
-def layout_text(answer: str) -> tuple[str, list[str]]:
-    """The plain text of a layout answer, block by block, and notes on any repair it needed."""
+def layout_blocks(answer: str) -> tuple[list[dict[str, Any]] | None, list[str]]:
+    """The blocks of a layout answer, or None for an answer in text, and notes on any repair."""
     notes: list[str] = []
     try:
         layout = json.loads(answer)
     except ValueError:
         if not answer.lstrip().startswith(("[", "{")):
-            return markdown_text(answer), ["the answer is text, not a layout"]
+            return None, ["the answer is text, not a layout"]
         layout, lost = recovered(answer)
         notes.append(
             "the layout is not valid JSON, so its blocks were read one by one: "
             f"{len(layout)} read, {lost} lost"
         )
     blocks = layout if isinstance(layout, list) else [layout]
-    texts = [block_text(block) for block in blocks if isinstance(block, dict)]
-    text = "\n\n".join(text for text in texts if text)
+    return [block for block in blocks if isinstance(block, dict)], notes
+
+
+def layout_text(answer: str) -> tuple[str, list[str]]:
+    """The plain text of a layout answer, block by block, and notes on any repair it needed."""
+    blocks, notes = layout_blocks(answer)
+    if blocks is None:
+        return markdown_text(answer), notes
+    text = "\n\n".join(text for text in map(block_text, blocks) if text)
     if not text and answer.strip():
         notes.append("no block of the layout holds text")
     return text, notes
+
+
+def fraction_box(bbox: Any, size: tuple[int, int]) -> Box | None:
+    """A box the model measured on an image of `size`, as fractions of that image."""
+    if not (isinstance(bbox, list) and len(bbox) == 4):
+        return None
+    try:
+        left, top, right, bottom = (float(value) for value in bbox)
+    except (TypeError, ValueError):
+        return None
+    width, height = size
+
+    def part(value: float, whole: int) -> float:
+        # A box can reach a pixel past the image; it is kept on the page.
+        return round(min(max(value / whole, 0.0), 1.0), 4)
+
+    return (part(left, width), part(top, height), part(right, width), part(bottom, height))
+
+
+def page_blocks(blocks: list[dict[str, Any]], size: tuple[int, int]) -> tuple[Block, ...]:
+    """The layout's blocks as Blocks, their boxes as fractions of an image of `size`."""
+    found = []
+    for block in blocks:
+        category = str(block.get("category", ""))
+        raw = block.get("text")
+        html = raw if category == "Table" and isinstance(raw, str) else ""
+        found.append(
+            Block(
+                category=category,
+                text=block_text(block),
+                box=fraction_box(block.get("bbox"), size),
+                html=html,
+            )
+        )
+    return tuple(found)
 
 
 Fetch = Callable[..., Any]
@@ -433,11 +512,22 @@ class DotsEngine:
         self.revision = revision(self.name)
 
     def tag(self) -> str:
+        settings = self.settings
         tag = f"{self.name.rsplit('/', 1)[-1]}-{self.revision[:8]}-vllm{self.vllm}"
-        if self.settings.quantization != "none":
-            tag += f"-{self.settings.quantization}"
-        if self.settings.max_pixels is not None:
-            tag += f"-max{self.settings.max_pixels}px"
+        if settings.quantization != "none":
+            tag += f"-{settings.quantization}"
+        if settings.max_pixels is not None:
+            tag += f"-max{settings.max_pixels}px"
+        # Sampling away from the parser's defaults is named too. The context is
+        # not: it can only cut an answer short, and such an answer is flagged.
+        if settings.temperature != DEFAULT.temperature:
+            tag += f"-temp{settings.temperature:g}"
+        if settings.top_p != DEFAULT.top_p:
+            tag += f"-topp{settings.top_p:g}"
+        if settings.seed != DEFAULT.seed:
+            tag += f"-seed{settings.seed}"
+        if settings.max_tokens is not None:
+            tag += f"-max{settings.max_tokens}tokens"
         return tag
 
     def describe(self) -> str:
@@ -472,11 +562,17 @@ class DotsEngine:
         except (KeyError, TypeError, ValueError) as exc:
             raise DotsError(f"no single answer in the server's response: {answer!r:.300}") from exc
         text, notes = layout_text(content)
-        if choice.get("finish_reason") == "length":
+        truncated = choice.get("finish_reason") == "length"
+        if truncated:
             notes.insert(0, "the answer was cut off at the token limit")
+        blocks, _ = layout_blocks(content)
+        with Image.open(io.BytesIO(png)) as image:
+            size = model_size(*image.size, settings.max_pixels)
         return Result(
             text=text,
             seconds=seconds,
             warnings="; ".join(notes),
             response=json.dumps(answer, ensure_ascii=False),
+            blocks=page_blocks(blocks or [], size),
+            truncated=truncated,
         )

@@ -32,12 +32,15 @@ from daleel.ocr.dots import (
     chat_request,
     error_message,
     fetch_json,
+    fraction_box,
     hub_cache,
     layout_text,
     markdown_text,
+    model_size,
     revision,
     table_text,
 )
+from daleel.ocr.engine import Block
 
 SERVER = "http://localhost:8000"
 MODEL = "rednote-hilab/dots.mocr"
@@ -46,9 +49,9 @@ CARD = {"id": MODEL, "object": "model", "root": MODEL, "max_model_len": 16384}
 HUB_VARIABLES = ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "HF_HOME", "XDG_CACHE_HOME")
 
 
-def png_of(mode: str, colour: Any = "white") -> bytes:
+def png_of(mode: str, colour: Any = "white", size: tuple[int, int] = (40, 20)) -> bytes:
     buffer = io.BytesIO()
-    Image.new(mode, (40, 20), colour).save(buffer, format="PNG")
+    Image.new(mode, size, colour).save(buffer, format="PNG")
     return buffer.getvalue()
 
 
@@ -316,6 +319,93 @@ def test_an_answer_cut_off_at_the_token_limit_is_flagged(hub: Path) -> None:
     result = DotsEngine(fetch=server).recognize(png_of("RGB"))
     assert result.text == "one"
     assert result.warnings.startswith("the answer was cut off at the token limit; ")
+    assert result.truncated
+
+
+def test_a_finished_answer_is_not_flagged(hub: Path) -> None:
+    result = DotsEngine(fetch=FakeServer(json.dumps([block("Text", "one")]))).recognize(
+        png_of("RGB")
+    )
+    assert not result.truncated
+
+
+# The four page shapes of the T2 run, rendered at 200 DPI under a limit of 5.4
+# million pixels. The server's prompt token counts confirm each size, at one
+# token per 28-pixel square: A4 4,956, the library slide 6,820, the calendar
+# 6,762 and the orientation page 2,478.
+@pytest.mark.parametrize(
+    ("rendered", "resized"),
+    [
+        ((1654, 2339), (1652, 2352)),
+        ((4000, 2250), (3080, 1736)),
+        ((1920, 2738), (1932, 2744)),
+        ((1654, 1170), (1652, 1176)),
+    ],
+    ids=["a4", "library_slide", "calendar", "orientation"],
+)
+def test_pages_are_resized_as_the_model_s_processor_resizes_them(
+    rendered: tuple[int, int], resized: tuple[int, int]
+) -> None:
+    assert model_size(*rendered, max_pixels=5_400_000) == resized
+
+
+def test_without_a_limit_the_model_s_own_applies() -> None:
+    # A4 at 300 DPI is under 11.3 million pixels, so it is only rounded.
+    assert model_size(2480, 3508) == (2492, 3500)
+
+
+def test_an_image_below_the_smallest_is_scaled_up() -> None:
+    wide, high = model_size(40, 20)
+    assert (wide, high) == (84, 56)
+    assert wide * high >= 3136
+
+
+@pytest.mark.parametrize(
+    ("bbox", "box"),
+    [
+        ([826, 1176, 1652, 2352], (0.5, 0.5, 1.0, 1.0)),
+        ([-2, 0, 1653, 2352], (0.0, 0.0, 1.0, 1.0)),
+        ([0, 0, 100], None),
+        (["left", 0, 1, 1], None),
+        (None, None),
+    ],
+    ids=["inside", "a_pixel_past_the_edge", "three_numbers", "not_numbers", "missing"],
+)
+def test_a_box_becomes_fractions_of_the_image_the_model_saw(
+    bbox: Any, box: tuple[float, float, float, float] | None
+) -> None:
+    assert fraction_box(bbox, (1652, 2352)) == box
+
+
+def test_the_layout_s_blocks_come_with_the_text(hub: Path) -> None:
+    layout = [
+        {"bbox": [826, 0, 1652, 1176], "category": "Section-header", "text": "## عنوان"},
+        {"bbox": [0, 1176, 826, 2352], "category": "Picture"},
+        {
+            "bbox": [0, 0, 826, 588],
+            "category": "Table",
+            "text": "<table><tr><td>أ</td><td>ب</td></tr></table>",
+        },
+    ]
+    engine = DotsEngine(Settings(max_pixels=5_400_000), fetch=FakeServer(json.dumps(layout)))
+    result = engine.recognize(png_of("RGB", size=(1654, 2339)))
+    assert result.blocks == (
+        Block("Section-header", "عنوان", (0.5, 0.0, 1.0, 0.5)),
+        Block("Picture", "", (0.0, 0.5, 0.5, 1.0)),
+        Block("Table", "أ ب", (0.0, 0.0, 0.5, 0.25), layout[2]["text"]),
+    )
+
+
+def test_an_answer_in_text_has_no_blocks(hub: Path) -> None:
+    result = DotsEngine(fetch=FakeServer("plain words")).recognize(png_of("RGB"))
+    assert result.text == "plain words"
+    assert result.blocks == ()
+
+
+def test_sampling_away_from_the_parser_s_defaults_is_named(hub: Path) -> None:
+    settings = Settings(temperature=0.0, top_p=0.9, seed=7, max_tokens=8000)
+    tag = DotsEngine(settings, fetch=FakeServer()).tag()
+    assert tag == "dots.mocr-01234567-vllm0.30.0-temp0-topp0.9-seed7-max8000tokens"
 
 
 def test_an_answer_without_a_single_choice_is_an_error(hub: Path) -> None:
