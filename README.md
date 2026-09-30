@@ -188,6 +188,30 @@ guide over rare real words. Those limitations, the evidence behind every
 threshold, and how to reproduce each number are in
 [`eval/results/gate_calibration.md`](eval/results/gate_calibration.md).
 
+## Extraction
+
+`daleel extract data/raw/` turns every page into a record: its text, the
+method that produced it, and the gate's evidence for the choice. A page keeps
+its text layer when the gate trusts both the page and its document as a whole.
+Every other page is read by OCR with dots.mocr, the most accurate engine in
+[`eval/results/ocr.md`](eval/results/ocr.md), so the two broken pages the gate
+still trusts are read by OCR too, since their documents go to OCR. An OCR record
+also keeps the page's layout: each block's category, text and box, in the
+page's own points.
+
+OCR needs dots.mocr served by vLLM, started as in
+[`eval/results/ocr.md`](eval/results/ocr.md), and the same limits given to the
+command:
+
+```bash
+daleel extract data/raw/ --quantization fp8 --max-pixels 5400000
+```
+
+Records go to `data/interim/extracted/<document>.jsonl`, a line per page.
+Every OCR reading is kept in `data/interim/ocr_cache/`, keyed on the engine and
+the page image, so a second run reads no page again, and an interrupted run
+resumes where it stopped.
+
 ## Usage
 
 ```bash
@@ -199,6 +223,7 @@ daleel inventory data/raw/ --backend pdfplumber   # the same, via pdfplumber, fo
 daleel route data/raw/                            # predicted extraction path per document
 daleel gate data/raw/                             # verdicts per document
 daleel gate data/raw/ --pages                     # verdicts per page, with reasons
+daleel extract data/raw/                          # every page's text as a record (OCR: see above)
 sha256sum -c data/SHA256SUMS                      # check your copies of the documents
 python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made of
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth

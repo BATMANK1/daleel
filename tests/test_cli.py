@@ -2,7 +2,9 @@
 
 The commands read PDFs, which CI doesn't have, so these tests cover everything
 that can be checked without them: the pure functions that turn metadata into
-output, argument parsing, and the error paths of both commands.
+output, argument parsing, and every command's error paths. Small generated PDFs
+stand in where a command must read one, and a stand-in for dots.mocr where it
+must read a page by OCR.
 """
 
 from __future__ import annotations
@@ -27,8 +29,11 @@ from daleel.cli import (
 from daleel.ingest.gate import PageVerdict, decide
 from daleel.ingest.metadata import PdfMetadata
 from daleel.ingest.quality import PageQuality
+from daleel.ingest.records import read_records
+from daleel.ocr import dots
+from daleel.ocr.engine import Result
 
-COMMANDS = ["inventory", "route", "gate"]
+COMMANDS = ["inventory", "route", "gate", "extract"]
 
 
 def test_route_row_reports_the_route_for_a_document() -> None:
@@ -214,3 +219,92 @@ def test_output_cut_short_by_a_pipe_ends_quietly(tmp_path: Path) -> None:
     )
     assert result.stdout == "line 0\n"
     assert "Traceback" not in result.stderr
+
+
+def _lexicon(folder: Path) -> Path:
+    path = folder / "lexicon.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("MSA_freq_lists.tsv", "\u0641\u064a\t5000\n")
+    return path
+
+
+class StandInDots:
+    """Stands in for dots.mocr on a vLLM server, counting the pages it reads."""
+
+    readings = 0
+
+    def __init__(self, settings: dots.Settings) -> None:
+        self.settings = settings
+
+    def tag(self) -> str:
+        return "dots-stand-in"
+
+    def describe(self) -> str:
+        return "a stand-in for dots.mocr"
+
+    def recognize(self, png: bytes) -> Result:
+        StandInDots.readings += 1
+        return Result(text="نص", seconds=150.0)
+
+
+def test_extract_command_is_registered() -> None:
+    assert build_parser().parse_args(["extract", "data/raw"]).command == "extract"
+
+
+def test_extract_names_a_document_it_cannot_find(
+    make_pdf: Callable[..., Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_pdf(["first page"], name="guide.pdf")
+    arguments = [
+        "extract",
+        str(tmp_path),
+        "--only",
+        "charter",
+        "--lexicon",
+        str(_lexicon(tmp_path)),
+    ]
+    assert main(arguments) == 2
+    assert "no charter in" in capsys.readouterr().err
+
+
+def test_extract_explains_a_missing_lexicon(
+    make_pdf: Callable[..., Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_pdf(["first page"])
+    assert main(["extract", str(tmp_path), "--lexicon", str(tmp_path / "absent.zip")]) == 2
+    assert "fetch_lexicon.py" in capsys.readouterr().err
+
+
+def test_extract_writes_records_and_reads_no_page_twice(
+    make_pdf: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(dots, "DotsEngine", StandInDots)
+    monkeypatch.setattr(StandInDots, "readings", 0)
+    pdfs = tmp_path / "raw"
+    pdfs.mkdir()
+    (pdfs / "notice.pdf").write_bytes(make_pdf(["first page", "second page"]).read_bytes())
+    arguments = [
+        "extract",
+        str(pdfs),
+        "--lexicon",
+        str(_lexicon(tmp_path)),
+        "--out",
+        str(tmp_path / "extracted"),
+        "--cache",
+        str(tmp_path / "cache"),
+    ]
+
+    assert main(arguments) == 0
+    first = capsys.readouterr()
+    records = read_records(tmp_path / "extracted" / "notice.jsonl")
+    assert [(record["page"], record["method"]) for record in records] == [(1, "ocr"), (2, "ocr")]
+    assert StandInDots.readings == 2
+    assert "notice page 1: read in 150 s" in first.err
+    assert "notice.pdf" in first.out
+
+    assert main(arguments) == 0
+    assert StandInDots.readings == 2
+    assert "notice page 2: from the cache" in capsys.readouterr().err
