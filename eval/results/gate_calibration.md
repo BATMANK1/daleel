@@ -70,14 +70,17 @@ sound pages, guide page 30 and the calendar.*
 **Decision:** pypdfium2 extracts text (`daleel.ingest.extract`); pdfplumber
 remains the tool for character geometry. Stability counts too: pypdfium2's
 words and digits were identical across two PDFium builds, while pdftotext's
-changed between poppler versions.
+changed between poppler versions. In the event, the calendar's grid was
+rebuilt from PDFium's own character boxes, which come with its text in logical
+order (`daleel.ingest.calendar`).
 
 **Known limitation of pypdfium2:** it maps the calendar's "fi" ligature glyph
 to U+001F, a control character, which normalization then removes, so
 "finalizing" becomes "nalizing" and "Alfitr" becomes "Altr". pdfplumber reads
 both correctly. The damage is visible to the gate's control-character count
 and affects only English text; it is the one run pypdfium2 misses on the
-calendar. `RCJY.gov.sa` is missing from guide page 30 in every extractor, so it
+calendar. The calendar's rows mend it: a U+001F before a Latin letter is read
+as fi. `RCJY.gov.sa` is missing from guide page 30 in every extractor, so it
 is absent from that page's text layer rather than lost by any of them.
 
 ## 2. Proxies against truth
