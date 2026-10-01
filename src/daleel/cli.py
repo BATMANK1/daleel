@@ -410,7 +410,6 @@ def _run_extract(args: argparse.Namespace) -> int:
 
     lexicon = load_gate_lexicon(args.lexicon)
     reader: CachedReader | None = None
-    hits = 0
 
     # The server is only asked for when a page needs OCR, so a document the
     # text layer serves throughout is extracted without one.
@@ -422,11 +421,19 @@ def _run_extract(args: argparse.Namespace) -> int:
         return reader
 
     def report(record: PageRecord) -> None:
-        nonlocal hits
-        if record.ocr is None or reader is None:
+        if record.ocr is None:
             return
-        how = "from the cache" if reader.hits > hits else f"read in {record.ocr.seconds:.0f} s"
-        hits = reader.hits
+        reading = record.ocr
+        how = "from the cache" if reading.cached else f"read in {reading.seconds:.0f} s"
+        again = reading.text_reading
+        if again is not None:
+            when = "from the cache" if again.cached else f"in {again.seconds:.0f} s"
+            added = f"{again.added} paragraph{'' if again.added == 1 else 's'} added"
+            how += (
+                f"; its text held {reading.arabic_tokens} of the "
+                f"{record.gate.quality.arabic_tokens} Arabic words in its text layer, "
+                f"so it was read again for its text {when}: {added}"
+            )
         print(f"{record.doc_id} page {record.page}: {how}", file=sys.stderr, flush=True)
 
     summaries = []

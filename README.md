@@ -200,7 +200,10 @@ also keeps the page's layout: each block's category, text and box, in the
 page's own points, in reading order. dots.mocr reads parts of a page that sit
 side by side left to right, so those are put right to left. It also writes two
 Arabic spellings with letters of other scripts, the Thai ส for سب in أسبوع and
-the Hebrew ת for ت, and those are repaired inside Arabic words.
+the Hebrew ת for ت, and those are repaired inside Arabic words. A page whose
+OCR text holds less than half of the Arabic words in its text layer has lost
+text, most often inside what its layout calls a picture, so it is read again
+for its text alone, and what that reading adds goes in after the picture.
 
 OCR needs dots.mocr served by vLLM, started as in
 [`eval/results/ocr.md`](eval/results/ocr.md), and the same limits given to the

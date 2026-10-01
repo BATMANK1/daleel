@@ -26,6 +26,8 @@ from daleel.ocr.dots import (
     DEFAULT,
     IMAGE_TOKENS,
     LAYOUT_PROMPT,
+    TEXT_PROMPT,
+    TEXT_TOKENS,
     DotsEngine,
     DotsError,
     Settings,
@@ -37,6 +39,7 @@ from daleel.ocr.dots import (
     layout_text,
     markdown_text,
     model_size,
+    plain_text,
     revision,
     table_text,
 )
@@ -406,6 +409,43 @@ def test_sampling_away_from_the_parser_s_defaults_is_named(hub: Path) -> None:
     settings = Settings(temperature=0.0, top_p=0.9, seed=7, max_tokens=8000)
     tag = DotsEngine(settings, fetch=FakeServer()).tag()
     assert tag == "dots.mocr-01234567-vllm0.30.0-temp0-topp0.9-seed7-max8000tokens"
+
+
+def test_a_text_reading_asks_for_the_page_s_text_alone_within_a_cap(hub: Path) -> None:
+    answer = "\n\n".join(["## مميزات العضوية", "- البدء باستعارة الكتب", "حجز الكتب"])
+    server = FakeServer(answer)
+    engine = DotsEngine(Settings(max_pixels=5_400_000), fetch=server)
+    result = engine.read_text(png_of("RGB"))
+    body = server.requests[-1][1]
+    assert body["messages"][0]["content"][1] == {"type": "text", "text": IMAGE_TOKENS + TEXT_PROMPT}
+    assert body["max_completion_tokens"] == TEXT_TOKENS
+    assert body["mm_processor_kwargs"] == {"max_pixels": 5_400_000}
+    assert result.text == "\n\n".join(["مميزات العضوية", "البدء باستعارة الكتب", "حجز الكتب"])
+    assert (result.blocks, result.truncated, result.warnings) == ((), False, "")
+    assert engine.text_tag() == "dots.mocr-01234567-vllm0.30.0-max5400000px-text2048"
+
+
+def test_a_text_reading_keeps_a_lower_token_limit(hub: Path) -> None:
+    server = FakeServer("نص")
+    DotsEngine(Settings(max_tokens=1000), fetch=server).read_text(png_of("RGB"))
+    assert server.requests[-1][1]["max_completion_tokens"] == 1000
+
+
+def test_a_text_reading_cut_off_at_its_cap_is_flagged(hub: Path) -> None:
+    server = FakeServer("العربية", finish_reason="length")
+    result = DotsEngine(fetch=server).read_text(png_of("RGB"))
+    assert result.truncated
+    assert result.warnings == "the answer was cut off at the token limit"
+
+
+def test_a_table_in_a_text_reading_becomes_a_line_per_row() -> None:
+    table = (
+        "<table><tr><td>الفئة</td><td>عدد الكتب</td></tr>"
+        "<tr><td>الطلبة</td><td>5 كتب</td></tr></table>"
+    )
+    rows = "\n".join(["الفئة عدد الكتب", "الطلبة 5 كتب"])
+    answer = "\n\n".join(["## سياسة الاعارة", table, "نص"])
+    assert plain_text(answer) == "\n\n".join(["سياسة الاعارة", rows, "نص"])
 
 
 def test_an_answer_without_a_single_choice_is_an_error(hub: Path) -> None:

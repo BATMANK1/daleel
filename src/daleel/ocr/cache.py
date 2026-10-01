@@ -12,6 +12,10 @@ name every setting that changes what the engine reads, and dots.mocr's does.
 The PDF is identified by its content, so a copy under another name is the same
 document, and a document changed in any way is a new one.
 
+An engine that reads layout can also read a page for its text alone
+(daleel.ocr.engine.TextEngine). That reading is kept the same way, under the
+engine's text tag, so it never stands in for the layout or the layout for it.
+
 Each reading is a JSON file under data/interim/ocr_cache/, written whole or not
 at all, so an interrupted run leaves nothing half-written behind. An answer cut
 off at a length limit is not kept, since a larger limit could finish it. Like
@@ -24,12 +28,13 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from daleel.ocr.engine import Block, Engine, Result
+from daleel.ocr.engine import Block, Engine, Result, TextEngine
 from daleel.ocr.render import RENDERING, render_page
 
 CACHE = Path("data/interim/ocr_cache")
@@ -91,16 +96,20 @@ class CachedReader:
     def tag(self) -> str:
         return self._tag
 
+    def text_tag(self) -> str:
+        """The tag of the engine's text reading, from an engine that has one (a TextEngine)."""
+        return cast(TextEngine, self.engine).text_tag()
+
     def describe(self) -> str:
         return self.engine.describe()
 
-    def key(self, path: Path, page: int) -> tuple[str, dict[str, Any]]:
-        """The key of one page's reading, and what it is made of."""
+    def key(self, path: Path, page: int, tag: str | None = None) -> tuple[str, dict[str, Any]]:
+        """The key of one page's reading, by default its layout, and what the key is made of."""
         resolved = path.resolve()
         if resolved not in self._documents:
             self._documents[resolved] = file_sha256(resolved)
         material = {
-            "engine": self._tag,
+            "engine": self._tag if tag is None else tag,
             "pdf": self._documents[resolved],
             "page": page,
             "dpi": self.dpi,
@@ -116,14 +125,23 @@ class CachedReader:
 
     def read(self, path: Path, page: int) -> Reading:
         """One page, numbered from 1, from the cache or else rendered and read."""
-        key, material = self.key(path, page)
+        return self._read(path, page, self._tag, self.engine.recognize)
+
+    def read_text(self, path: Path, page: int) -> Reading:
+        """One page read for its text alone, from an engine that does so (a TextEngine)."""
+        return self._read(path, page, self.text_tag(), cast(TextEngine, self.engine).read_text)
+
+    def _read(
+        self, path: Path, page: int, tag: str, recognize: Callable[[bytes], Result]
+    ) -> Reading:
+        key, material = self.key(path, page, tag)
         entry = self.entry(key)
         kept = self._load(entry, material)
         if kept is not None:
             self.hits += 1
             return kept
         rendered = render_page(path, page, dpi=self.dpi)
-        result = self.engine.recognize(rendered.png())
+        result = recognize(rendered.png())
         self.misses += 1
         if not result.truncated:
             self._store(

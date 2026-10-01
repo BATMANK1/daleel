@@ -91,6 +91,37 @@ class LeftColumnFirstEngine:
         return Result(text=text, seconds=1.0, blocks=blocks)
 
 
+class PictureSlideEngine:
+    """Reads a slide as dots.mocr read the library deck's page 14: its steps inside a picture."""
+
+    TITLE = "طريقة حجز القاعات الدراسية"
+    STEPS = ("مسح كود حجز القاعات الدراسية", "تعبئة نموذج طلب حجز قاعة دراسية")
+
+    def __init__(self) -> None:
+        self.text_readings = 0
+
+    def tag(self) -> str:
+        return "stand-in-1.0"
+
+    def text_tag(self) -> str:
+        return "stand-in-1.0-text"
+
+    def describe(self) -> str:
+        return "a stand-in engine"
+
+    def recognize(self, png: bytes) -> Result:
+        blocks = (
+            Block("Section-header", self.TITLE, (0.3, 0.16, 0.7, 0.27)),
+            Block("Picture", "", (0.26, 0.35, 0.8, 0.78)),
+            Block("Page-footer", "12", (0.05, 0.92, 0.07, 0.94)),
+        )
+        return Result(text="\n\n".join([self.TITLE, "12"]), seconds=21.0, blocks=blocks)
+
+    def read_text(self, png: bytes) -> Result:
+        self.text_readings += 1
+        return Result(text="\n\n".join([self.TITLE, *self.STEPS]), seconds=14.0)
+
+
 def reading(page_size: tuple[float, float] = (600, 800)) -> OcrReading:
     return OcrReading(
         engine="stand-in-1.0",
@@ -125,9 +156,9 @@ def test_every_page_of_a_document_sent_to_ocr_is_read_even_a_trusted_one() -> No
 def test_only_the_pages_the_text_layer_cannot_serve_are_read() -> None:
     asked: list[int] = []
 
-    def read(number: int) -> tuple[str, OcrReading]:
-        asked.append(number)
-        return f"page {number} by OCR", reading()
+    def read(verdict: PageVerdict) -> tuple[str, OcrReading]:
+        asked.append(verdict.page)
+        return f"page {verdict.page} by OCR", reading()
 
     seen: list[int] = []
     records = document_records(
@@ -166,6 +197,8 @@ def test_a_record_keeps_the_gate_s_evidence_whichever_method_won() -> None:
         "seconds": 120.5,
         "warnings": "",
         "page_size": [600, 800],
+        "arabic_tokens": None,
+        "text_reading": None,
         "blocks": [
             {
                 "category": "Text",
@@ -217,6 +250,53 @@ def test_a_page_read_left_column_first_is_recorded_right_column_first(
     assert record.text == "\n\n".join(["العنوان", "الجزء الأول", "الجزء الثاني"])
     blocks = record.to_dict()["ocr"]["blocks"]
     assert [block["engine_order"] for block in blocks] == [2, 3, 1]
+
+
+def test_a_page_missing_most_of_its_text_layer_s_words_is_read_again_for_its_text(
+    make_pdf: Callable[..., Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The layout holds 4 Arabic words of the 25 in the text layer, as on the
+    # library deck's page 14.
+    monkeypatch.setattr(records_module, "judge_pages", lambda texts, lexicon: [page(1, 0.5, 25)])
+    engine = PictureSlideEngine()
+    reader = CachedReader(engine, tmp_path / "cache")
+    (record,) = extract_document(make_pdf(["first page"]), frozenset(), lambda: reader)
+    steps = "\n\n".join(PictureSlideEngine.STEPS)
+    assert record.text == "\n\n".join([PictureSlideEngine.TITLE, steps, "12"])
+    ocr = record.to_dict()["ocr"]
+    blocks = ocr["blocks"]
+    assert [(block["category"], block["engine_order"]) for block in blocks] == [
+        ("Section-header", 1),
+        ("Picture", 2),
+        ("Text", None),
+        ("Page-footer", 3),
+    ]
+    assert (blocks[2]["text"], blocks[2]["box"]) == (steps, blocks[1]["box"])
+    assert ocr["arabic_tokens"] == 4
+    assert ocr["text_reading"] == {
+        "engine": "stand-in-1.0-text",
+        "seconds": 14.0,
+        "warnings": "",
+        "added": 2,
+    }
+    assert engine.text_readings == 1
+
+
+@pytest.mark.parametrize("layer_words", [8, 10], ids=["too_few_to_judge", "half_held"])
+def test_a_page_holding_enough_of_its_text_layer_s_words_is_read_once(
+    make_pdf: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    layer_words: int,
+) -> None:
+    # The layout holds 5 Arabic words. This engine cannot read for text alone,
+    # so asking it to would fail.
+    verdicts = [page(1, 0.5, layer_words)]
+    monkeypatch.setattr(records_module, "judge_pages", lambda texts, lexicon: verdicts)
+    reader = CachedReader(LeftColumnFirstEngine(), tmp_path / "cache")
+    (record,) = extract_document(make_pdf(["first page"]), frozenset(), lambda: reader)
+    assert record.ocr is not None
+    assert (record.ocr.arabic_tokens, record.ocr.text_reading) == (5, None)
 
 
 def test_a_letter_of_another_script_inside_an_arabic_word_is_repaired(
