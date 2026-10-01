@@ -48,6 +48,21 @@ class CountingEngine:
         )
 
 
+class TextReadingEngine(CountingEngine):
+    """Also reads a page for its text alone, and counts those readings apart."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.text_readings = 0
+
+    def text_tag(self) -> str:
+        return self.tag() + "-text"
+
+    def read_text(self, png: bytes) -> Result:
+        self.text_readings += 1
+        return Result(text="نص الصورة", seconds=12.0)
+
+
 @pytest.fixture
 def renders(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """The pages the cache renders, in order."""
@@ -151,3 +166,28 @@ def test_the_engine_s_names_pass_through(tmp_path: Path) -> None:
     reader = CachedReader(CountingEngine("stand-in-3.1"), tmp_path)
     assert reader.tag() == "stand-in-3.1"
     assert reader.describe() == "a stand-in engine"
+
+
+def test_a_text_reading_is_kept_apart_from_the_layout(
+    make_pdf: Callable[..., Path], tmp_path: Path
+) -> None:
+    pdf = make_pdf(["first page"])
+    reader = CachedReader(TextReadingEngine(), tmp_path / "cache")
+    assert reader.read(pdf, 1).result.text == "نص الصفحة"
+    assert reader.read_text(pdf, 1).result.text == "نص الصورة"
+    assert reader.text_tag() == "stand-in-1.0-text"
+    engine = TextReadingEngine()
+    again = CachedReader(engine, tmp_path / "cache")
+    assert again.read_text(pdf, 1).cached
+    assert again.read(pdf, 1).cached
+    assert (engine.readings, engine.text_readings) == (0, 0)
+
+
+def test_a_layout_s_key_is_made_as_before_text_readings(
+    make_pdf: Callable[..., Path], tmp_path: Path
+) -> None:
+    # Layouts kept before text readings existed are still found.
+    reader = CachedReader(CountingEngine(), tmp_path / "cache")
+    _, material = reader.key(make_pdf(["first page"]), 1)
+    assert set(material) == {"engine", "pdf", "page", "dpi", "renderer"}
+    assert material["engine"] == "stand-in-1.0"

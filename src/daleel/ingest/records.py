@@ -19,6 +19,17 @@ right, side by side, which are read right to left (daleel.ocr.reading_order),
 and the page's text follows the blocks. Each block keeps its place in the
 engine's own order, so a change to it shows.
 
+A layout leaves out the text inside what it calls a picture, and on two of the
+library deck's slides dots.mocr calls the content itself a picture: the
+membership features and the steps to book a study room. Such a page shows in
+its words: its OCR text holds far fewer of the Arabic words its text layer
+holds, even where that layer is too broken to use. So a page whose OCR text
+holds less than half of them is read again for its text alone, and the
+paragraphs of that reading that no block holds become a block of their own,
+after the page's largest picture, with no place in the engine's order. On the
+library deck, that is those two slides, at 17.5% and 32%; the other fourteen
+hold 74% or more.
+
 Letters of other scripts the engine writes inside Arabic words are repaired
 where they are known, and reported (daleel.ocr.letters).
 
@@ -31,6 +42,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -40,13 +52,24 @@ from typing import Any
 from daleel.ingest.extract import page_texts
 from daleel.ingest.gate import PageVerdict, Verdict, document_path, judge_pages
 from daleel.ingest.metadata import read_metadata
+from daleel.ingest.quality import arabic_tokens
 from daleel.ingest.router import ExtractionPath
+from daleel.normalize.arabic import for_comparison
 from daleel.ocr.cache import CachedReader
 from daleel.ocr.engine import Block, Box
 from daleel.ocr.letters import repair_letters
 from daleel.ocr.reading_order import block_order
 
 RECORDS = Path("data/interim/extracted")
+
+# A page read by OCR is read again for its text alone when its text holds less
+# than this share of the Arabic words its text layer holds, and the layer holds
+# at least MIN_LAYER_WORDS: fewer is too few to judge a page by.
+COVERAGE = 0.5
+MIN_LAYER_WORDS = 10
+# A block of the layout holds a paragraph of the text reading when it holds this
+# share of the paragraph's words.
+HELD = 0.8
 
 
 def in_points(box: Box, page_size: tuple[float, float]) -> list[float]:
@@ -56,6 +79,27 @@ def in_points(box: Box, page_size: tuple[float, float]) -> list[float]:
     return [
         round(value, 2) for value in (left * width, top * height, right * width, bottom * height)
     ]
+
+
+@dataclass(frozen=True)
+class TextReading:
+    """A page read again for its text alone, and how many paragraphs that added."""
+
+    engine: str
+    seconds: float
+    warnings: str
+    # The paragraphs it holds that no block of the layout holds.
+    added: int
+    # Whether this run read it back from the cache. It is not written.
+    cached: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "engine": self.engine,
+            "seconds": round(self.seconds, 1),
+            "warnings": self.warnings,
+            "added": self.added,
+        }
 
 
 @dataclass(frozen=True)
@@ -69,9 +113,16 @@ class OcrReading:
     # The page's width and height in points, which its blocks' boxes are measured in.
     page_size: tuple[float, float]
     # The blocks in reading order, and each one's place in the engine's own
-    # order, counting from 1: by default, the same order.
+    # order, counting from 1: by default, the same order. A block a text
+    # reading added has no place.
     blocks: tuple[Block, ...] = ()
-    engine_order: tuple[int, ...] = ()
+    engine_order: tuple[int | None, ...] = ()
+    # The Arabic words in the layout's text, counted as the gate counts the
+    # text layer's (arabic_tokens), before any text reading added to it.
+    arabic_tokens: int | None = None
+    text_reading: TextReading | None = None
+    # Whether this run read the layout back from the cache. It is not written.
+    cached: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         places = self.engine_order or range(1, len(self.blocks) + 1)
@@ -91,6 +142,8 @@ class OcrReading:
             "seconds": round(self.seconds, 1),
             "warnings": self.warnings,
             "page_size": [round(value, 2) for value in self.page_size],
+            "arabic_tokens": self.arabic_tokens,
+            "text_reading": None if self.text_reading is None else self.text_reading.to_dict(),
             "blocks": blocks,
         }
 
@@ -138,8 +191,8 @@ def page_methods(verdicts: Sequence[PageVerdict]) -> tuple[ExtractionPath, list[
     return document, methods
 
 
-# Reads one page, numbered from 1, by OCR: its text and how it was read.
-ReadPage = Callable[[int], tuple[str, OcrReading]]
+# Reads by OCR the page the gate judged: its text and how it was read.
+ReadPage = Callable[[PageVerdict], tuple[str, OcrReading]]
 
 
 def document_records(
@@ -156,12 +209,60 @@ def document_records(
     for text, verdict, method in zip(texts, verdicts, methods, strict=True):
         ocr = None
         if method is ExtractionPath.OCR:
-            text, ocr = read(verdict.page)
+            text, ocr = read(verdict)
         record = PageRecord(doc_id, verdict.page, method, producer, text, verdict, document, ocr)
         records.append(record)
         if on_record is not None:
             on_record(record)
     return records
+
+
+def arabic_words(text: str) -> int:
+    """The Arabic words in a text, counted as the gate counts a text layer's."""
+    return len(arabic_tokens(for_comparison(text)))
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"\w+", for_comparison(text)))
+
+
+def unread_paragraphs(text: str, blocks: Sequence[Block]) -> list[str]:
+    """The paragraphs of a text reading that no block of the layout holds."""
+    held = [_words(block.text) for block in blocks]
+    found = []
+    for paragraph in re.split(r"\n\s*\n", text):
+        words = _words(paragraph)
+        if words and not any(len(words & block) >= HELD * len(words) for block in held):
+            found.append(paragraph.strip())
+    return found
+
+
+def _area(box: Box) -> float:
+    return (box[2] - box[0]) * (box[3] - box[1])
+
+
+def _place_for_picture_text(blocks: Sequence[Block]) -> tuple[int, Box | None]:
+    """Where text read from a page's pictures goes, and the box it is given.
+
+    After the largest picture, in its box; on a page with no picture, after
+    every block but the page's footers, with no box.
+    """
+    pictures = [
+        (place, block.box)
+        for place, block in enumerate(blocks)
+        if block.category == "Picture" and block.box is not None
+    ]
+    if pictures:
+        place, box = max(pictures, key=lambda picture: _area(picture[1]))
+        return place + 1, box
+    place = len(blocks)
+    while place > 0 and blocks[place - 1].category == "Page-footer":
+        place -= 1
+    return place, None
+
+
+def _joined(blocks: Sequence[Block]) -> str:
+    return "\n\n".join(block.text for block in blocks if block.text)
 
 
 def _repaired(block: Block, notes: list[str]) -> Block:
@@ -172,27 +273,59 @@ def _repaired(block: Block, notes: list[str]) -> Block:
     return dataclasses.replace(block, text=text, html=repair_letters(block.html)[0])
 
 
-def read_page(reader: CachedReader, path: Path, page: int) -> tuple[str, OcrReading]:
-    """One page read by OCR, or read back from the cache, its blocks in reading order."""
-    reading = reader.read(path, page)
+def read_page(reader: CachedReader, path: Path, verdict: PageVerdict) -> tuple[str, OcrReading]:
+    """One page read by OCR, or read back from the cache, its blocks in reading order.
+
+    A page whose text holds less than COVERAGE of the Arabic words its text
+    layer holds is read again for its text alone.
+    """
+    reading = reader.read(path, verdict.page)
     result = reading.result
     notes = [result.warnings] if result.warnings else []
     order = block_order(result.blocks)
-    blocks = tuple(_repaired(result.blocks[place], notes) for place in order)
+    blocks = [_repaired(result.blocks[place], notes) for place in order]
+    places: list[int | None] = [place + 1 for place in order]
     # The engine's text is its blocks' text, so it follows them when they change.
     text, found = repair_letters(result.text)
     if blocks and (found or order != sorted(order)):
-        text = "\n\n".join(block.text for block in blocks if block.text)
+        text = _joined(blocks)
     elif not blocks:
         notes.extend(found)
+    words = arabic_words(text)
+
+    text_reading = None
+    layer = verdict.quality.arabic_tokens
+    if layer >= MIN_LAYER_WORDS and words < COVERAGE * layer:
+        again = reader.read_text(path, verdict.page)
+        again_text, found = repair_letters(again.result.text)
+        # An answer cut off at its limit may have run on, and is not used.
+        added = [] if again.result.truncated else unread_paragraphs(again_text, blocks)
+        if added and blocks:
+            place, box = _place_for_picture_text(blocks)
+            blocks.insert(place, Block("Text", "\n\n".join(added), box))
+            places.insert(place, None)
+            text = _joined(blocks)
+        elif added:
+            text = "\n\n".join([text, *added]).strip()
+        text_reading = TextReading(
+            engine=reader.text_tag(),
+            seconds=again.result.seconds,
+            warnings="; ".join(filter(None, [again.result.warnings, *found])),
+            added=len(added),
+            cached=again.cached,
+        )
+
     ocr = OcrReading(
         engine=reader.tag(),
         dpi=reader.dpi,
         seconds=result.seconds,
         warnings="; ".join(notes),
         page_size=reading.page_size,
-        blocks=blocks,
-        engine_order=tuple(place + 1 for place in order),
+        blocks=tuple(blocks),
+        engine_order=tuple(places),
+        arabic_tokens=words,
+        text_reading=text_reading,
+        cached=reading.cached,
     )
     return text, ocr
 
@@ -218,7 +351,7 @@ def extract_document(
         producer,
         texts,
         verdicts,
-        lambda page: read_page(ocr(), path, page),
+        lambda verdict: read_page(ocr(), path, verdict),
         on_record,
     )
 

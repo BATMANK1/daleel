@@ -26,12 +26,13 @@ from daleel.cli import (
     main,
     route_row,
 )
+from daleel.ingest import records as records_module
 from daleel.ingest.gate import PageVerdict, decide
 from daleel.ingest.metadata import PdfMetadata
 from daleel.ingest.quality import PageQuality
 from daleel.ingest.records import read_records
 from daleel.ocr import dots
-from daleel.ocr.engine import Result
+from daleel.ocr.engine import Block, Result
 
 COMMANDS = ["inventory", "route", "gate", "extract"]
 
@@ -247,6 +248,21 @@ class StandInDots:
         return Result(text="نص", seconds=150.0)
 
 
+class StandInDotsWithAPicture(StandInDots):
+    """Reads a slide whose steps sit inside a picture, as dots.mocr read the library's page 14."""
+
+    def text_tag(self) -> str:
+        return "dots-stand-in-text"
+
+    def recognize(self, png: bytes) -> Result:
+        title = Block("Section-header", "طريقة حجز القاعات الدراسية", (0.3, 0.16, 0.7, 0.27))
+        picture = Block("Picture", "", (0.26, 0.35, 0.8, 0.78))
+        return Result(text=title.text, seconds=21.0, blocks=(title, picture))
+
+    def read_text(self, png: bytes) -> Result:
+        return Result(text="مسح كود حجز القاعات الدراسية", seconds=14.0)
+
+
 def test_extract_command_is_registered() -> None:
     assert build_parser().parse_args(["extract", "data/raw"]).command == "extract"
 
@@ -308,3 +324,38 @@ def test_extract_writes_records_and_reads_no_page_twice(
     assert main(arguments) == 0
     assert StandInDots.readings == 2
     assert "notice page 2: from the cache" in capsys.readouterr().err
+
+
+def test_extract_reports_a_page_read_again_for_its_text(
+    make_pdf: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(dots, "DotsEngine", StandInDotsWithAPicture)
+    quality = PageQuality(
+        content_chars=500,
+        presform_ratio=0.0,
+        bidi_per_1k=0.0,
+        c0_per_1k=0.0,
+        replacement_chars=0,
+        cid_placeholders=0,
+        arabic_tokens=25,
+        token_validity=0.5,
+        single_letter_share=0.0,
+    )
+    verdicts = [PageVerdict(page=1, quality=quality, decision=decide(quality))]
+    monkeypatch.setattr(records_module, "judge_pages", lambda texts, lexicon: verdicts)
+    pdfs = tmp_path / "raw"
+    pdfs.mkdir()
+    (pdfs / "notice.pdf").write_bytes(make_pdf(["first page"]).read_bytes())
+    arguments = ["extract", str(pdfs), "--lexicon", str(_lexicon(tmp_path))]
+    arguments += ["--out", str(tmp_path / "extracted"), "--cache", str(tmp_path / "cache")]
+
+    assert main(arguments) == 0
+    assert (
+        "notice page 1: read in 21 s; its text held 4 of the 25 Arabic words in its text "
+        "layer, so it was read again for its text in 14 s: 1 paragraph added"
+    ) in capsys.readouterr().err
+    assert main(arguments) == 0
+    assert "page 1: from the cache; " in capsys.readouterr().err

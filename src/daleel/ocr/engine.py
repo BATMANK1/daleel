@@ -58,3 +58,15 @@ class Engine(Protocol):
     def recognize(self, png: bytes) -> Result:
         """Read the text of one page image."""
         ...
+
+
+class TextEngine(Engine, Protocol):
+    """An engine that reads layout, and can also read a page for its text alone."""
+
+    def text_tag(self) -> str:
+        """The tag of a text reading: a name apart from the layout reading's."""
+        ...
+
+    def read_text(self, png: bytes) -> Result:
+        """Read one page image for its text alone: what a layout leaves out included."""
+        ...

@@ -30,6 +30,11 @@ server reports, and the model's revision, read from the Hugging Face cache, so
 the client runs on the machine that serves. The server does not report whether
 it quantized the model, so that is stated when the engine is built.
 
+A page can also be read for its text alone, with dots.mocr's prompt for plain
+text (read_text). A layout leaves out the text inside pictures, and a text
+reading does not, so the extraction asks for one where a page's layout misses
+most of the words its text layer holds (daleel.ingest.records).
+
 A page larger than the model's pixel limit is scaled down to fit. vLLM sets
 aside memory for the largest image a request may hold, so a small GPU needs a
 lower limit, given to the server when it starts (--mm-processor-kwargs). The
@@ -39,6 +44,7 @@ engine sends its own limit with every page, so the one recorded is the one used.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import html
 import http.client
 import io
@@ -80,6 +86,17 @@ LAYOUT_PROMPT = """Please output the layout information from the PDF image, incl
 
 5. Final Output: The entire output must be a single JSON object.
 """  # noqa: E501
+
+# prompt_ocr in dots_mocr/utils/prompts.py, verbatim: the page's text alone,
+# with no layout. A text reading's tag names it, so another prompt needs
+# another name there.
+TEXT_PROMPT = "Extract the text content from this image."
+
+# The most tokens a text reading may run to. Asked for the text of a title cut
+# out of its slide, the model repeated one word for 15,167 tokens, ten minutes,
+# until it reached the context's end (eval/results/layout.md). The densest page
+# read for T2 prints 2,997 characters, about 1,100 tokens of plain text.
+TEXT_TOKENS = 2048
 
 # Written before the prompt, the image tokens keep vLLM from adding a newline
 # between the image and the prompt (dots_mocr/model/inference.py).
@@ -175,8 +192,10 @@ def model_size(width: int, height: int, max_pixels: int | None = None) -> tuple[
     return wide, high
 
 
-def chat_request(model: str, png: bytes, settings: Settings = DEFAULT) -> dict[str, Any]:
-    """The chat completion request that asks the model for one page's layout."""
+def chat_request(
+    model: str, png: bytes, settings: Settings = DEFAULT, prompt: str = LAYOUT_PROMPT
+) -> dict[str, Any]:
+    """The chat completion request that asks the model about one page: by default, its layout."""
     image = base64.b64encode(rgb_png(png)).decode("ascii")
     content = [
         {
@@ -184,7 +203,7 @@ def chat_request(model: str, png: bytes, settings: Settings = DEFAULT) -> dict[s
             "image_url": {"url": f"data:image/png;base64,{image}"},
             "uuid": uuid.uuid4().hex,
         },
-        {"type": "text", "text": IMAGE_TOKENS + LAYOUT_PROMPT},
+        {"type": "text", "text": IMAGE_TOKENS + prompt},
     ]
     request: dict[str, Any] = {
         "model": model,
@@ -355,6 +374,16 @@ def block_text(block: dict[str, Any]) -> str:
     if block.get("category") == "Table":
         return table_text(text)
     return markdown_text(text)
+
+
+_TABLE_HTML = re.compile(r"<table\b.*?</table>", re.IGNORECASE | re.DOTALL)
+_BLANK_LINES = re.compile(r"\n{3,}")
+
+
+def plain_text(answer: str) -> str:
+    """The text of an answer in Markdown, each HTML table in it a line per row."""
+    text = _TABLE_HTML.sub(lambda table: "\n\n" + table_text(table[0]) + "\n\n", answer)
+    return _BLANK_LINES.sub("\n\n", markdown_text(text))
 
 
 _BLOCK_START = re.compile(r'\{\s*"')
@@ -550,10 +579,14 @@ class DotsEngine:
             f"{settings.temperature:g}, top_p {settings.top_p:g}, seed {settings.seed}"
         )
 
-    def recognize(self, png: bytes) -> Result:
-        settings = self.settings
+    def text_tag(self) -> str:
+        """The tag of this engine reading a page for its text alone."""
+        return f"{self.tag()}-text{TEXT_TOKENS}"
+
+    def _ask(self, png: bytes, prompt: str, settings: Settings) -> tuple[Any, str, bool, float]:
+        """The server's answer about one page, its text, whether it was cut off, and its seconds."""
         start = time.perf_counter()
-        body = chat_request(self.model, png, settings)
+        body = chat_request(self.model, png, settings, prompt)
         answer = self._fetch(f"{self.server}/v1/chat/completions", body, settings.timeout)
         seconds = time.perf_counter() - start
         try:
@@ -561,18 +594,40 @@ class DotsEngine:
             content = choice["message"]["content"] or ""
         except (KeyError, TypeError, ValueError) as exc:
             raise DotsError(f"no single answer in the server's response: {answer!r:.300}") from exc
+        return answer, content, choice.get("finish_reason") == "length", seconds
+
+    def recognize(self, png: bytes) -> Result:
+        answer, content, truncated, seconds = self._ask(png, LAYOUT_PROMPT, self.settings)
         text, notes = layout_text(content)
-        truncated = choice.get("finish_reason") == "length"
         if truncated:
             notes.insert(0, "the answer was cut off at the token limit")
         blocks, _ = layout_blocks(content)
         with Image.open(io.BytesIO(png)) as image:
-            size = model_size(*image.size, settings.max_pixels)
+            size = model_size(*image.size, self.settings.max_pixels)
         return Result(
             text=text,
             seconds=seconds,
             warnings="; ".join(notes),
             response=json.dumps(answer, ensure_ascii=False),
             blocks=page_blocks(blocks or [], size),
+            truncated=truncated,
+        )
+
+    def read_text(self, png: bytes) -> Result:
+        """The page's text alone, with no layout, the text inside its pictures included.
+
+        A layout leaves a picture's text out (LAYOUT_PROMPT, rule 3), but asked
+        for the page's text alone the model reads that text too: the library
+        deck's membership features and booking steps, which its layout calls
+        pictures (eval/results/layout.md). The answer is capped at TEXT_TOKENS.
+        """
+        limit = min(TEXT_TOKENS, self.settings.max_tokens or TEXT_TOKENS)
+        settings = dataclasses.replace(self.settings, max_tokens=limit)
+        answer, content, truncated, seconds = self._ask(png, TEXT_PROMPT, settings)
+        return Result(
+            text=plain_text(content),
+            seconds=seconds,
+            warnings="the answer was cut off at the token limit" if truncated else "",
+            response=json.dumps(answer, ensure_ascii=False),
             truncated=truncated,
         )
