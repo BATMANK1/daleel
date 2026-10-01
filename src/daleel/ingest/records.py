@@ -19,12 +19,16 @@ right, side by side, which are read right to left (daleel.ocr.reading_order),
 and the page's text follows the blocks. Each block keeps its place in the
 engine's own order, so a change to it shows.
 
+Letters of other scripts the engine writes inside Arabic words are repaired
+where they are known, and reported (daleel.ocr.letters).
+
 A document's records go to data/interim/extracted/<document>.jsonl, a line
 per page, and stay out of git like the rest of data/interim/.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import tempfile
@@ -39,6 +43,7 @@ from daleel.ingest.metadata import read_metadata
 from daleel.ingest.router import ExtractionPath
 from daleel.ocr.cache import CachedReader
 from daleel.ocr.engine import Block, Box
+from daleel.ocr.letters import repair_letters
 from daleel.ocr.reading_order import block_order
 
 RECORDS = Path("data/interim/extracted")
@@ -159,20 +164,32 @@ def document_records(
     return records
 
 
+def _repaired(block: Block, notes: list[str]) -> Block:
+    text, found = repair_letters(block.text)
+    if not found:
+        return block
+    notes.extend(found)
+    return dataclasses.replace(block, text=text, html=repair_letters(block.html)[0])
+
+
 def read_page(reader: CachedReader, path: Path, page: int) -> tuple[str, OcrReading]:
     """One page read by OCR, or read back from the cache, its blocks in reading order."""
     reading = reader.read(path, page)
     result = reading.result
+    notes = [result.warnings] if result.warnings else []
     order = block_order(result.blocks)
-    blocks = tuple(result.blocks[place] for place in order)
-    text = result.text
-    if order != sorted(order):
+    blocks = tuple(_repaired(result.blocks[place], notes) for place in order)
+    # The engine's text is its blocks' text, so it follows them when they change.
+    text, found = repair_letters(result.text)
+    if blocks and (found or order != sorted(order)):
         text = "\n\n".join(block.text for block in blocks if block.text)
+    elif not blocks:
+        notes.extend(found)
     ocr = OcrReading(
         engine=reader.tag(),
         dpi=reader.dpi,
         seconds=result.seconds,
-        warnings=result.warnings,
+        warnings="; ".join(notes),
         page_size=reading.page_size,
         blocks=blocks,
         engine_order=tuple(place + 1 for place in order),
