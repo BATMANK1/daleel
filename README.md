@@ -197,7 +197,8 @@ Every other page is read by OCR with dots.mocr, the most accurate engine in
 [`eval/results/ocr.md`](eval/results/ocr.md), so the two broken pages the gate
 still trusts are read by OCR too, since their documents go to OCR. An OCR record
 also keeps the page's layout: each block's category, text and box, in the
-page's own points.
+page's own points, in reading order. dots.mocr reads parts of a page that sit
+side by side left to right, so those are put right to left.
 
 OCR needs dots.mocr served by vLLM, started as in
 [`eval/results/ocr.md`](eval/results/ocr.md), and the same limits given to the
