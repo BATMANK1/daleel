@@ -219,6 +219,22 @@ def test_a_page_read_left_column_first_is_recorded_right_column_first(
     assert [block["engine_order"] for block in blocks] == [2, 3, 1]
 
 
+def test_a_letter_of_another_script_inside_an_arabic_word_is_repaired(
+    make_pdf: Callable[..., Path], tmp_path: Path
+) -> None:
+    class ThaiLetterEngine(LeftColumnFirstEngine):
+        def recognize(self, png: bytes) -> Result:
+            text = "خلال أ" + chr(0x0E2A) + "وعين"
+            return Result(text=text, seconds=1.0, blocks=(Block("Text", text, (0, 0, 1, 1)),))
+
+    reader = CachedReader(ThaiLetterEngine(), tmp_path / "cache")
+    (record,) = extract_document(make_pdf(["first page"]), frozenset(), lambda: reader)
+    assert record.text == "خلال أسبوعين"
+    assert record.to_dict()["ocr"]["blocks"][0]["text"] == "خلال أسبوعين"
+    assert record.ocr is not None
+    assert record.ocr.warnings.startswith("THAI CHARACTER SO SUA in ")
+
+
 def test_no_engine_is_asked_for_when_the_text_layer_serves_every_page(
     make_pdf: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
