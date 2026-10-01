@@ -6,7 +6,10 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
   "pdfplumber>=0.11",
   "pillow>=10",
-  "pypdfium2>=5",
+  # 5.13.0 ships PDFium 153.0.7999.0, which puts the words of an Arabic line
+  # last word first. 5.12.1 keeps them in order, and reads all 257 pages of the
+  # corpus as 5.6.0 and 5.7.1 do (eval/results/gate_calibration.md).
+  "pypdfium2>=5,<5.13",
 ]
 
 [project.optional-dependencies]

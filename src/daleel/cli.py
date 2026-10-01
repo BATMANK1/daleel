@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from daleel.ingest.calendar import CALENDAR, CalendarPage, read_calendar, write_csv
-from daleel.ingest.extract import BACKENDS
+from daleel.ingest.extract import BACKENDS, UnsupportedPdfiumError
 from daleel.ingest.gate import (
     PageVerdict,
     Verdict,
@@ -585,6 +585,9 @@ def main(argv: list[str] | None = None) -> int:
         devnull = os.open(os.devnull, os.O_WRONLY)
         os.dup2(devnull, sys.stdout.fileno())
         return 1
+    except UnsupportedPdfiumError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     return status
 
 

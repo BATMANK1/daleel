@@ -45,6 +45,7 @@ from typing import Protocol
 
 import pypdfium2
 
+from daleel.ingest.extract import check_reading_order
 from daleel.normalize.arabic import for_comparison
 
 # The columns of a calendar row, as the ground truth names them.
@@ -343,8 +344,10 @@ def read_calendar(path: Path, lexicon: frozenset[str]) -> list[CalendarPage]:
 
     Pass the lexicon from load_gate_lexicon: it decides which glued words to part.
     Raises ValueError, naming the page, where a page's characters and their
-    boxes cannot be matched.
+    boxes cannot be matched, and UnsupportedPdfiumError where the installed PDFium
+    puts Arabic words out of order.
     """
+    check_reading_order()
     document = pypdfium2.PdfDocument(path)
     try:
         pages = []

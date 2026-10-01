@@ -28,7 +28,7 @@ locally and only its numbers are published here.
   0.11.10 and pdftotext 26.08.0 on the other. Everything the gate depends on,
   sections 2 and 3 and the lexicon note, came out identical on both. Parts of
   the extractor comparison in section 1 did not, and are reported with their
-  versions.
+  versions. Word order, found later, explains why (end of section 1).
 - **Truth metrics:** *precision* is the share of the text layer's Arabic words
   that appear in the ground truth; *recall* is the share of the ground truth's
   words that the layer captured. Both compare bags of normalized words, so
@@ -82,6 +82,19 @@ and affects only English text; it is the one run pypdfium2 misses on the
 calendar. The calendar's rows mend it: a U+001F before a Latin letter is read
 as fi. `RCJY.gov.sa` is missing from guide page 30 in every extractor, so it
 is absent from that page's text layer rather than lost by any of them.
+
+**Word order, found later:** the two builds differ in more than brackets.
+pypdfium2 5.13.0 ships PDFium 153.0.7999.0, which puts the words of an Arabic
+line in the order they are drawn, last word first: 5,248 of the corpus's 5,705
+lines with Arabic come out reordered, and the calendar's dates come out with
+their suffix first, as `م2026/08/27`. Every page still holds the same words,
+each spelled right, so sections 2 and 3, which compare bags of words, and the
+gate's verdicts are unaffected, which is how it went unnoticed. Order is not,
+and the calendar's rows cannot be rebuilt from it. pypdfium2 5.6.0, 5.7.1 and
+5.12.1, with PDFium 147.0.7713.0, 149.0.7802.0 and 152.0.7947.0, read all 257
+pages identically, in logical order. So pyproject.toml holds pypdfium2 below
+5.13, and before reading any page, `daleel.ingest.extract` reads a generated
+Arabic line and refuses a build that reorders it.
 
 ## 2. Proxies against truth
 
