@@ -203,7 +203,9 @@ Arabic spellings with letters of other scripts, the Thai ส for سب in أسب�
 the Hebrew ת for ت, and those are repaired inside Arabic words. A page whose
 OCR text holds less than half of the Arabic words in its text layer has lost
 text, most often inside what its layout calls a picture, so it is read again
-for its text alone, and what that reading adds goes in after the picture.
+for its text alone, and what that reading adds goes in after the picture. How
+the library deck's records were checked against its slides, and what that led
+to, is in [`eval/results/layout.md`](eval/results/layout.md).
 
 OCR needs dots.mocr served by vLLM, started as in
 [`eval/results/ocr.md`](eval/results/ocr.md), and the same limits given to the
