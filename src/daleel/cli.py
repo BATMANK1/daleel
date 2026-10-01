@@ -10,6 +10,7 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from daleel.ingest.calendar import CALENDAR, CalendarPage, read_calendar, write_csv
 from daleel.ingest.extract import BACKENDS
 from daleel.ingest.gate import (
     PageVerdict,
@@ -453,6 +454,98 @@ def _run_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- calendar ----------------------------------------------------------------
+
+_CALENDAR_COLUMNS = (
+    ("page", "page"),
+    ("semester", "semester"),
+    ("rows", "rows"),
+    ("unplaced", "unplaced lines"),
+    ("csv", "rows written to"),
+)
+
+
+def calendar_summary(page: CalendarPage, out: Path) -> dict:
+    """One page of a calendar: its semester, how many rows it gave, and where they went."""
+    return {
+        "page": page.page,
+        "semester": page.semester_en or None,
+        "rows": len(page.rows),
+        "unplaced": sum(len(row.unplaced) for row in page.rows),
+        "csv": str(out),
+    }
+
+
+def _add_calendar_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "calendar",
+        help="rebuild the academic calendar's events, a row for each, from its text layer",
+        description=(
+            "Rebuild every event card of a calendar PDF as a row: its titles, its days and "
+            "its Gregorian and Hijri dates, read top to bottom and right to left. Each "
+            "page's rows are written to OUT/<document>_p<NN>.csv in the ground truth's "
+            "columns, which scripts/check_calendar_csv.py checks against the .ics."
+        ),
+    )
+    parser.add_argument("pdf", type=Path, help="the calendar's PDF")
+    parser.add_argument(
+        "--out", type=Path, default=CALENDAR, help="folder for the rows (default: %(default)s)"
+    )
+    parser.add_argument(
+        "--lexicon",
+        type=Path,
+        default=LEXICON_ZIP,
+        help="frequency-list zip, which decides which glued words to part (default: %(default)s)",
+    )
+    parser.add_argument("--json", action="store_true", help="emit the summary as JSON")
+
+
+def _run_calendar(args: argparse.Namespace) -> int:
+    if not args.pdf.exists():
+        print(f"error: {args.pdf} does not exist", file=sys.stderr)
+        return 2
+    if not args.pdf.is_file():
+        print(f"error: {args.pdf} is not a file", file=sys.stderr)
+        return 2
+    if not args.lexicon.is_file():
+        print(
+            f"error: no lexicon at {args.lexicon}. Fetch it with: python3 scripts/fetch_lexicon.py",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        pages = read_calendar(args.pdf, load_gate_lexicon(args.lexicon))
+    except ValueError as error:
+        print(f"error: {args.pdf}, {error}", file=sys.stderr)
+        return 1
+    if not any(page.rows for page in pages):
+        print(
+            f"error: no event cards in {args.pdf}: no line of its text layer is a Gregorian date",
+            file=sys.stderr,
+        )
+        return 1
+
+    summaries = []
+    for page in pages:
+        out = args.out / f"{args.pdf.stem}_p{page.page:02d}.csv"
+        write_csv(page.rows, out)
+        summaries.append(calendar_summary(page, out))
+        for row in page.rows:
+            for text in row.unplaced:
+                print(
+                    f"warning: page {page.page}, {row.title_en or row.title_ar}: "
+                    f"a line that fits no column: {text!r}",
+                    file=sys.stderr,
+                )
+
+    if args.json:
+        print(json.dumps(summaries, indent=2, ensure_ascii=False))
+    else:
+        print(_format_rows(summaries, _CALENDAR_COLUMNS))
+    return 0
+
+
 # --- entry point -------------------------------------------------------------
 
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
@@ -460,6 +553,7 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "route": _run_route,
     "gate": _run_gate,
     "extract": _run_extract,
+    "calendar": _run_calendar,
 }
 
 
@@ -473,6 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_route_parser(subparsers)
     _add_gate_parser(subparsers)
     _add_extract_parser(subparsers)
+    _add_calendar_parser(subparsers)
     return parser
 
 

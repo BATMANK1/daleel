@@ -9,6 +9,8 @@ must read a page by OCR.
 
 from __future__ import annotations
 
+import csv
+import json
 import shutil
 import subprocess
 import sys
@@ -27,6 +29,7 @@ from daleel.cli import (
     route_row,
 )
 from daleel.ingest import records as records_module
+from daleel.ingest.calendar import CalendarPage, CalendarRow
 from daleel.ingest.gate import PageVerdict, decide
 from daleel.ingest.metadata import PdfMetadata
 from daleel.ingest.quality import PageQuality
@@ -359,3 +362,112 @@ def test_extract_reports_a_page_read_again_for_its_text(
     ) in capsys.readouterr().err
     assert main(arguments) == 0
     assert "page 1: from the cache; " in capsys.readouterr().err
+
+
+def test_calendar_command_is_registered() -> None:
+    assert build_parser().parse_args(["calendar", "calendar.pdf"]).command == "calendar"
+
+
+def test_calendar_names_a_pdf_it_cannot_find(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["calendar", str(tmp_path / "absent.pdf")]) == 2
+    assert "does not exist" in capsys.readouterr().err
+
+
+def test_calendar_wants_a_file_not_a_folder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["calendar", str(tmp_path)]) == 2
+    assert "is not a file" in capsys.readouterr().err
+
+
+def test_calendar_explains_a_missing_lexicon(
+    make_pdf: Callable[..., Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pdf = make_pdf(["first page"])
+    assert main(["calendar", str(pdf), "--lexicon", str(tmp_path / "absent.zip")]) == 2
+    assert "fetch_lexicon.py" in capsys.readouterr().err
+
+
+def test_calendar_says_when_a_pdf_has_no_event_cards(
+    make_pdf: Callable[..., Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pdf = make_pdf(["Start of First Semester"])
+    out = tmp_path / "calendar"
+    arguments = ["calendar", str(pdf), "--lexicon", str(_lexicon(tmp_path)), "--out", str(out)]
+    assert main(arguments) == 1
+    assert "no event cards" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_calendar_reports_a_page_it_cannot_read(
+    make_pdf: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def unreadable(path: Path, lexicon: frozenset[str]) -> list[CalendarPage]:
+        raise ValueError("page 2: its text has 4 characters for PDFium's 3")
+
+    monkeypatch.setattr("daleel.cli.read_calendar", unreadable)
+    pdf = make_pdf(["a calendar"])
+    assert main(["calendar", str(pdf), "--lexicon", str(_lexicon(tmp_path))]) == 1
+    assert "page 2: its text has 4 characters" in capsys.readouterr().err
+
+
+def _calendar_page() -> CalendarPage:
+    """Two cards of the calendar's page 1, as read_calendar gives them, the
+    second with a line that fit none of its columns."""
+    meem, heh = chr(0x0645), chr(0x0647)
+    start = CalendarRow(
+        "بداية الفصل الدراسي الأول",
+        "Start of First Semester",
+        "الأحد",
+        "Sun",
+        "2026/08/23" + meem,
+        "1448/03/10" + heh,
+    )
+    exams = CalendarRow(
+        "الاختبارات النهائية",
+        "Final Exams",
+        "الأحد- الخميس",
+        "Sun-Thu",
+        "2026/12/31-20" + meem,
+        "1448/07/22-11" + heh,
+        unplaced=("12:00 PM",),
+    )
+    return CalendarPage(1, "الفصل الدراسي الأول (481)", "First Semester (481)", (start, exams))
+
+
+def test_calendar_writes_each_page_s_rows_and_warns_of_a_line_it_could_not_place(
+    make_pdf: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("daleel.cli.read_calendar", lambda path, lexicon: [_calendar_page()])
+    pdf = make_pdf(["a calendar"], name="academic_weeks_1448.pdf")
+    out = tmp_path / "calendar"
+    arguments = ["calendar", str(pdf), "--lexicon", str(_lexicon(tmp_path)), "--out", str(out)]
+
+    assert main(arguments) == 0
+    written = out / "academic_weeks_1448_p01.csv"
+    with written.open(encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+    assert [row["title_en"] for row in rows] == ["Start of First Semester", "Final Exams"]
+    assert rows[1]["date_gregorian"] == "2026/12/31-20" + chr(0x0645)
+    captured = capsys.readouterr()
+    assert "First Semester (481)" in captured.out
+    assert "page 1, Final Exams: a line that fits no column: '12:00 PM'" in captured.err
+
+    assert main([*arguments, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == [
+        {
+            "page": 1,
+            "semester": "First Semester (481)",
+            "rows": 2,
+            "unplaced": 1,
+            "csv": str(written),
+        }
+    ]
