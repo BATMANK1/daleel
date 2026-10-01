@@ -1,12 +1,18 @@
-"""Checks for a hand-transcribed calendar CSV.
+"""Checks for a calendar CSV, hand-transcribed or rebuilt from the text layer.
 
-Ground truth records dates exactly as printed, so no ordering is imposed here:
-a printed range may run end first (see rule 6.9 of the annotation
-guidelines). What can be checked is the shape of each cell, whether its dates
-exist in an independent source, and whether the Gregorian and Hijri ranges
-agree on how long the event is. That last check is what catches a cell whose
-digits were scrambled while typing mixed-direction text, which no external
-source can do for the Hijri column.
+Both record dates exactly as printed, so no ordering is imposed here: a
+printed range may run end first (see rule 6.9 of the annotation guidelines).
+The calendar's later pages print some months and days with one digit, a space
+before the suffix, and one Hijri range over two lines, each a full date with
+its own suffix, so a cell may hold any of those.
+
+What can be checked is the shape of each cell, whether its dates exist in an
+independent source, whether the Gregorian and Hijri ranges agree on how long
+the event is, and whether the days printed beside the dates are the days they
+fall on. The span check is what catches a cell whose digits were scrambled
+while typing mixed-direction text, which no external source can do for the
+Hijri column. The weekday check is what catches a row whose days and dates
+came from different cards.
 
 Every function here is pure, so the tests need neither a CSV nor a calendar
 file.
@@ -18,9 +24,20 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 
-# yyyy/mm/dd, optionally -dd or -mm/dd, then the era suffix:
-# U+0645 ARABIC LETTER MEEM (Gregorian) or U+0647 ARABIC LETTER HEH (Hijri).
-DATE_CELL = re.compile(r"^(\d{4})/(\d{2})/(\d{2})(?:-(?:(\d{2})/)?(\d{2}))?([\u0645\u0647])$")
+# yyyy/mm/dd, optionally -dd or -mm/dd, then the era suffix, maybe after a
+# space: U+0645 ARABIC LETTER MEEM (Gregorian) or U+0647 ARABIC LETTER HEH
+# (Hijri). Months and days have one digit or two.
+DATE_CELL = re.compile(
+    r"^(\d{4})/(\d{1,2})/(\d{1,2})(?:-(?:(\d{1,2})/)?(\d{1,2}))? ?([\u0645\u0647])$"
+)
+# A range printed over two lines: two full dates, each with the suffix, the
+# second followed by the range's dash.
+TWO_LINE_RANGE = re.compile(
+    r"^(\d{4})/(\d{1,2})/(\d{1,2}) ?([\u0645\u0647]) (\d{4})/(\d{1,2})/(\d{1,2})- ?\4$"
+)
+
+# English day names, in the order datetime numbers the days of the week: Monday is 0.
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 # Hijri months run 29 or 30 days and this module has no converter, so Hijri
 # spans assume 30 and are compared with a tolerance of one day.
@@ -44,16 +61,21 @@ class DateCell:
 
 def read_date_cell(cell: str) -> DateCell:
     """Parse a date cell, or explain why it cannot be read."""
+    ends: list[YearMonthDay]
+    two_lines = TWO_LINE_RANGE.fullmatch(cell.strip())
     match = DATE_CELL.fullmatch(cell.strip())
-    if not match:
+    if two_lines:
+        numbers = [int(group) for group in two_lines.groups() if group.isdigit()]
+        ends = [(numbers[0], numbers[1], numbers[2]), (numbers[3], numbers[4], numbers[5])]
+    elif match:
+        year, month, day, second_month, second_day = (
+            int(group) if group else None for group in match.groups()[:5]
+        )
+        ends = [(year, month, day)]
+        if second_day:
+            ends.append((year, second_month or month, second_day))
+    else:
         return DateCell(problem=f"does not match yyyy/mm/dd[-[mm/]dd] plus a suffix: {cell!r}")
-
-    year, month, day, second_month, second_day = (
-        int(group) if group else None for group in match.groups()[:5]
-    )
-    ends: list[YearMonthDay] = [(year, month, day)]
-    if second_day:
-        ends.append((year, second_month or month, second_day))
 
     for _, a_month, a_day in ends:
         if not 1 <= a_month <= 12 or not 1 <= a_day <= 31:
@@ -70,7 +92,7 @@ def span_days(cell: DateCell, *, hijri: bool) -> int:
     if not cell.is_range:
         return 0
     if hijri:
-        ordinals = [month * HIJRI_MONTH_DAYS + day for _, month, day in cell.ends]
+        ordinals = [(year * 12 + month) * HIJRI_MONTH_DAYS + day for year, month, day in cell.ends]
     else:
         ordinals = [dt.date(*end).toordinal() for end in cell.ends]
     return abs(ordinals[1] - ordinals[0])
@@ -85,6 +107,24 @@ def span_disagreement(gregorian: DateCell, hijri: DateCell) -> str | None:
     if abs(in_gregorian - in_hijri) <= SPAN_TOLERANCE_DAYS:
         return None
     return f"gregorian spans {in_gregorian} days, hijri about {in_hijri}"
+
+
+def weekday_disagreement(days_en: str, gregorian: DateCell) -> str | None:
+    """Report when the English days printed beside the dates are not the days they fall on.
+
+    A range's days are printed first day first, whichever end its dates print
+    first, so they are compared with the dates in order.
+    """
+    if gregorian.problem or not gregorian.ends:
+        return None
+    try:
+        dates = sorted(dt.date(*end) for end in gregorian.ends)
+    except ValueError:
+        return "the dates do not exist"
+    actual = [WEEKDAYS[date.weekday()] for date in dates]
+    if [part.strip() for part in days_en.split("-")] == actual:
+        return None
+    return f"printed {days_en!r}, but the dates fall on {' - '.join(actual)}"
 
 
 def ics_spans(raw: bytes) -> tuple[set[dt.date], set[frozenset[dt.date]]]:
