@@ -14,6 +14,10 @@ the evidence for it. A page read by OCR also keeps the engine's tag, the
 resolution it was read at, and its layout: the blocks in reading order, each
 box in the page's own points from its top left corner, as pdfplumber measures
 characters, so a box and the text layer's characters can be laid side by side.
+Reading order is the engine's, but for parts of the page it read left to
+right, side by side, which are read right to left (daleel.ocr.reading_order),
+and the page's text follows the blocks. Each block keeps its place in the
+engine's own order, so a change to it shows.
 
 A document's records go to data/interim/extracted/<document>.jsonl, a line
 per page, and stay out of git like the rest of data/interim/.
@@ -35,6 +39,7 @@ from daleel.ingest.metadata import read_metadata
 from daleel.ingest.router import ExtractionPath
 from daleel.ocr.cache import CachedReader
 from daleel.ocr.engine import Block, Box
+from daleel.ocr.reading_order import block_order
 
 RECORDS = Path("data/interim/extracted")
 
@@ -58,17 +63,22 @@ class OcrReading:
     warnings: str
     # The page's width and height in points, which its blocks' boxes are measured in.
     page_size: tuple[float, float]
+    # The blocks in reading order, and each one's place in the engine's own
+    # order, counting from 1: by default, the same order.
     blocks: tuple[Block, ...] = ()
+    engine_order: tuple[int, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
+        places = self.engine_order or range(1, len(self.blocks) + 1)
         blocks = [
             {
                 "category": block.category,
                 "text": block.text,
                 "box": None if block.box is None else in_points(block.box, self.page_size),
                 "html": block.html,
+                "engine_order": place,
             }
-            for block in self.blocks
+            for block, place in zip(self.blocks, places, strict=True)
         ]
         return {
             "engine": self.engine,
@@ -150,18 +160,24 @@ def document_records(
 
 
 def read_page(reader: CachedReader, path: Path, page: int) -> tuple[str, OcrReading]:
-    """One page read by OCR, or read back from the cache, and how it was read."""
+    """One page read by OCR, or read back from the cache, its blocks in reading order."""
     reading = reader.read(path, page)
     result = reading.result
+    order = block_order(result.blocks)
+    blocks = tuple(result.blocks[place] for place in order)
+    text = result.text
+    if order != sorted(order):
+        text = "\n\n".join(block.text for block in blocks if block.text)
     ocr = OcrReading(
         engine=reader.tag(),
         dpi=reader.dpi,
         seconds=result.seconds,
         warnings=result.warnings,
         page_size=reading.page_size,
-        blocks=result.blocks,
+        blocks=blocks,
+        engine_order=tuple(place + 1 for place in order),
     )
-    return result.text, ocr
+    return text, ocr
 
 
 def extract_document(

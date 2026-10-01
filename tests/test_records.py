@@ -72,6 +72,25 @@ class StandInEngine:
         )
 
 
+class LeftColumnFirstEngine:
+    """Reads every page as two columns, the left first, as dots.mocr read the library's page 8."""
+
+    def tag(self) -> str:
+        return "stand-in-1.0"
+
+    def describe(self) -> str:
+        return "a stand-in engine"
+
+    def recognize(self, png: bytes) -> Result:
+        blocks = (
+            Block("Text", "الجزء الثاني", (0.05, 0.25, 0.45, 0.9)),
+            Block("Section-header", "العنوان", (0.6, 0.25, 0.9, 0.35)),
+            Block("Text", "الجزء الأول", (0.6, 0.4, 0.9, 0.9)),
+        )
+        text = "\n\n".join(block.text for block in blocks)
+        return Result(text=text, seconds=1.0, blocks=blocks)
+
+
 def reading(page_size: tuple[float, float] = (600, 800)) -> OcrReading:
     return OcrReading(
         engine="stand-in-1.0",
@@ -147,7 +166,15 @@ def test_a_record_keeps_the_gate_s_evidence_whichever_method_won() -> None:
         "seconds": 120.5,
         "warnings": "",
         "page_size": [600, 800],
-        "blocks": [{"category": "Text", "text": "نص", "box": [300, 200, 600, 600], "html": ""}],
+        "blocks": [
+            {
+                "category": "Text",
+                "text": "نص",
+                "box": [300, 200, 600, 600],
+                "html": "",
+                "engine_order": 1,
+            }
+        ],
     }
 
 
@@ -179,6 +206,17 @@ def test_every_page_the_gate_cannot_trust_is_rendered_and_read(
     # 300 by 200 points at 200 DPI is 833.3 by 555.6 pixels, which PDFium rounds up.
     assert engine.images[0].size == (834, 556)
     assert records[0].to_dict()["ocr"]["blocks"][0]["box"] == [75, 0, 225, 50]
+
+
+def test_a_page_read_left_column_first_is_recorded_right_column_first(
+    make_pdf: Callable[..., Path], tmp_path: Path
+) -> None:
+    pdf = make_pdf(["first page"], name="policy.pdf")
+    reader = CachedReader(LeftColumnFirstEngine(), tmp_path / "cache")
+    (record,) = extract_document(pdf, frozenset(), lambda: reader)
+    assert record.text == "\n\n".join(["العنوان", "الجزء الأول", "الجزء الثاني"])
+    blocks = record.to_dict()["ocr"]["blocks"]
+    assert [block["engine_order"] for block in blocks] == [2, 3, 1]
 
 
 def test_no_engine_is_asked_for_when_the_text_layer_serves_every_page(
