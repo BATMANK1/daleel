@@ -5,8 +5,8 @@ pdfplumber writes Arabic in visual order, which reverses every word, and its
 right-to-left option fixes the words by reversing every number instead.
 pypdfium2 gets both right: 99 to 100% of words on sound pages, and every date
 on the calendar intact. It also returns base letters where pdfplumber and
-pdftotext return presentation forms. pdfplumber remains the tool for
-character geometry.
+pdftotext return presentation forms, and gives every character's box, from
+which the calendar's grid is rebuilt (daleel.ingest.calendar).
 
 pdfplumber stays available as a second backend, for comparison: the inventory
 can measure a corpus through either one, and the difference between them is

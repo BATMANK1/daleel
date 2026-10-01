@@ -220,6 +220,48 @@ Every OCR reading is kept in `data/interim/ocr_cache/`, keyed on the engine and
 the page image, so a second run reads no page again, and an interrupted run
 resumes where it stopped.
 
+## Calendar
+
+The academic calendar answers what students ask most often: when drop and add
+closes, when exams start. The gate trusts its text layer, and PDFium reads
+every event's lines whole, every date intact. What a page of text loses is the
+grid: the event cards come in the order they were drawn, so a date can sit
+beside another event's title. OCR is no way around it, since dots.mocr
+invented a second date in every date box.
+
+`daleel calendar` rebuilds each card from where its lines sit on the page.
+Every card prints exactly one Gregorian date, so each date anchors a card, and
+the lines in its column, from the title above it down to the Hijri date below
+it, are that card's. Cards are read top to bottom and each row right to left,
+as the annotation guidelines read a page. Two faults of the text layer are
+mended: its English font writes the fi ligature as the control character
+U+001F, and five times a word lost the space before it, as in `الدراسيالأول`.
+A word the gate's word list does not hold, which splits exactly one way into
+two words it does, is split.
+
+```bash
+daleel calendar data/raw/academic_weeks_1448.pdf
+python3 scripts/check_calendar_csv.py data/interim/calendar/academic_weeks_1448_p01.csv <ics> 14
+```
+
+Each page's rows go to `data/interim/calendar/<document>_p<NN>.csv`, in the
+ground truth's columns: the title, the days, each in Arabic and in English,
+then the Gregorian and the Hijri date as printed.
+
+Page 1 came out identical to its hand-transcribed ground truth, all 84 cells
+of its 14 rows. Pages 2 and 3 have no ground truth, so the checks stand in for
+it, and every row passes them: its Gregorian dates are an event's dates in the
+.ics, its two calendars agree on how long the event lasts, and its English days
+are the days its dates fall on. The three pages give 37 rows, and their dates
+pair off one to one with the 37 events of the .ics, the AI-generated copy
+described under [Provenance](#provenance), trusted for its dates and nothing
+else.
+
+The later pages' quirks stay as printed, as ground truth keeps them: page 2's
+`Semestet`, page 3's `حذف و إضافة`, months and days of one digit, a space
+before a date's suffix, and a Hijri range over two lines, each a full date
+with its own suffix. The checks read all of these.
+
 ## Usage
 
 ```bash
@@ -232,8 +274,10 @@ daleel route data/raw/                            # predicted extraction path pe
 daleel gate data/raw/                             # verdicts per document
 daleel gate data/raw/ --pages                     # verdicts per page, with reasons
 daleel extract data/raw/                          # every page's text as a record (OCR: see above)
+daleel calendar data/raw/academic_weeks_1448.pdf  # the calendar's events, a row for each
 sha256sum -c data/SHA256SUMS                      # check your copies of the documents
 python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made of
+python3 scripts/check_calendar_csv.py <csv> <ics> # check a page of calendar rows
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
@@ -248,8 +292,9 @@ ground truth, which is not redistributed.
 Text extraction uses **pypdfium2** (BSD-3-Clause or Apache-2.0), chosen by
 measurement: pdfplumber writes Arabic in visual order, spelling every word
 backwards (see [the calibration](eval/results/gate_calibration.md)).
-**pdfplumber** (MIT) remains for character geometry, which the table
-reconstruction work needs, and as a comparison backend for the inventory.
+**pdfplumber** (MIT) remains as a comparison backend for the inventory. The
+calendar's grid is rebuilt from PDFium's character boxes instead, which come
+with its text in logical order.
 PyMuPDF was ruled out because it is AGPL-licensed, a blanket disqualifier at
 many organisations that would force this repository's own licence to match.
 
@@ -260,8 +305,10 @@ The extraction inventory above (table T1), the quality gate's calibration in
 OCR engines compared in [`eval/results/ocr.md`](eval/results/ocr.md) (table T2):
 dots.mocr, a vision language model, reads Arabic about three times as
 accurately as Tesseract or PaddleOCR, and invented a second date in every date
-box of the academic calendar. Retrieval and arm-comparison tables land here as
-that work completes. Nothing is published here before it is measured.
+box of the academic calendar. The calendar's events are rebuilt from its text
+layer instead, and its first page matches its ground truth cell for cell
+([Calendar](#calendar)). Retrieval and arm-comparison tables land here as that
+work completes. Nothing is published here before it is measured.
 
 ## Licence
 
