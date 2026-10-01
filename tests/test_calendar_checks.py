@@ -21,6 +21,7 @@ from daleel.eval.calendar_checks import (
     read_date_cell,
     span_days,
     span_disagreement,
+    weekday_disagreement,
 )
 
 
@@ -44,6 +45,26 @@ def test_range_crossing_months_carries_both_months() -> None:
     assert read_date_cell("1448/08/08-07/30\u0647").ends == ((1448, 8, 8), (1448, 7, 30))
 
 
+def test_a_space_before_the_suffix_is_read() -> None:
+    # Page 2 prints the start of the second semester with one.
+    assert read_date_cell("2027/01/17 \u0645").ends == ((2027, 1, 17),)
+
+
+def test_months_and_days_of_one_digit_are_read() -> None:
+    # Page 2 prints the last day for grades as 1449/1/10, and Eid al-Fitr as a
+    # range back into the second month.
+    assert read_date_cell("1449/1/10\u0647").ends == ((1449, 1, 10),)
+    assert read_date_cell("2027/03/13-2/26\u0645").ends == ((2027, 3, 13), (2027, 2, 26))
+
+
+def test_a_hijri_range_over_two_lines_is_read() -> None:
+    # Page 2's final exams: the range crosses into 1449, a full date a line.
+    cell = read_date_cell("1448/12/26\u0647 1449/01/09-\u0647")
+    assert cell.ends == ((1448, 12, 26), (1449, 1, 9))
+    assert span_days(cell, hijri=True) == 13
+    assert span_disagreement(read_date_cell("2027/06/14-01\u0645"), cell) is None
+
+
 def test_surrounding_whitespace_is_ignored() -> None:
     assert read_date_cell("  2026/08/23م  ").ends == ((2026, 8, 23),)
 
@@ -52,12 +73,20 @@ def test_surrounding_whitespace_is_ignored() -> None:
     "cell",
     [
         "2026/08/23",  # no era suffix
-        "2026/8/23\u0645",  # single-digit month
+        "2026/123/23\u0645",  # three-digit month
         "23-2026/09/26\u0645",  # the start day moved to the front
         "2026-08-23\u0645",  # wrong separator
+        "1448/12/26\u0647 1449/01/09-\u0645",  # a range over two lines, its suffixes differing
         "",
     ],
-    ids=["no_suffix", "single_digit_month", "start_day_first", "hyphen_separators", "empty"],
+    ids=[
+        "no_suffix",
+        "three_digit_month",
+        "start_day_first",
+        "hyphen_separators",
+        "two_suffixes",
+        "empty",
+    ],
 )
 def test_malformed_cells_are_reported(cell: str) -> None:
     result = read_date_cell(cell)
@@ -166,3 +195,31 @@ def test_empty_calendar_has_nothing_in_it() -> None:
 def test_date_cell_defaults_are_empty() -> None:
     assert DateCell().ends == ()
     assert DateCell().problem is None
+
+
+def test_days_that_fall_on_their_dates_agree() -> None:
+    assert weekday_disagreement("Sun", read_date_cell("2026/08/23\u0645")) is None
+
+
+def test_a_range_s_days_run_first_day_first_whichever_end_its_dates_print_first() -> None:
+    # The National Day holiday: printed 26-23, Wednesday the 23rd to Saturday.
+    assert weekday_disagreement("Wed - Sat", read_date_cell("2026/09/26-23\u0645")) is None
+
+
+def test_days_from_another_card_are_caught() -> None:
+    problem = weekday_disagreement("Thu", read_date_cell("2026/08/23\u0645"))
+    assert problem is not None
+    assert "Sun" in problem
+
+
+def test_a_range_s_days_in_the_wrong_order_are_caught() -> None:
+    assert weekday_disagreement("Sat - Wed", read_date_cell("2026/09/26-23\u0645")) is not None
+
+
+def test_dates_that_do_not_exist_are_reported() -> None:
+    problem = weekday_disagreement("Sun", read_date_cell("2027/02/30\u0645"))
+    assert problem == "the dates do not exist"
+
+
+def test_unreadable_dates_report_no_weekday() -> None:
+    assert weekday_disagreement("Sun", read_date_cell("nonsense")) is None
