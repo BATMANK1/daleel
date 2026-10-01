@@ -28,6 +28,7 @@ from daleel.cli import (
     main,
     route_row,
 )
+from daleel.ingest import extract
 from daleel.ingest import records as records_module
 from daleel.ingest.calendar import CalendarPage, CalendarRow
 from daleel.ingest.gate import PageVerdict, decide
@@ -362,6 +363,29 @@ def test_extract_reports_a_page_read_again_for_its_text(
     ) in capsys.readouterr().err
     assert main(arguments) == 0
     assert "page 1: from the cache; " in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["inventory", "gate", "extract", "calendar"])
+def test_no_command_reads_a_text_layer_with_a_pdfium_that_reorders_arabic(
+    command: str,
+    make_pdf: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # As PDFium 153.0.7999.0, in pypdfium2 5.13.0, reads the generated line.
+    monkeypatch.setattr(extract, "_read_probe", lambda: "حذف فترة نهاية")
+    extract.check_reading_order.cache_clear()
+    pdf = make_pdf(["first page"])
+    target = pdf if command == "calendar" else tmp_path
+    arguments = [command, str(target)]
+    if command != "inventory":
+        arguments += ["--lexicon", str(_lexicon(tmp_path))]
+    try:
+        assert main(arguments) == 2
+    finally:
+        extract.check_reading_order.cache_clear()
+    assert "out of order" in capsys.readouterr().err
 
 
 def test_calendar_command_is_registered() -> None:

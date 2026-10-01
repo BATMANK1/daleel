@@ -1,21 +1,33 @@
 """Tests for text-layer extraction.
 
 The PDFs come from the make_pdf fixture in conftest.py, which builds them byte
-by byte, so the tests need no fixture files. They
-use a standard Latin font, since embedding an Arabic font in a test is not
-practical: these tests cover the wrapper's behaviour, while Arabic accuracy is
-established by the calibration against ground truth.
+by byte, so the tests need no fixture files. Most use a standard Latin font:
+they cover the wrapper's behaviour, while Arabic accuracy is established by the
+calibration against ground truth. Arabic word order is tested on a generated
+line, whose letters are boxes that a ToUnicode map names, so no Arabic font is
+needed.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
 from daleel.ingest import extract
-from daleel.ingest.extract import BACKENDS, page_text, page_texts
+from daleel.ingest.extract import (
+    BACKENDS,
+    ORDER_PROBE,
+    UnsupportedPdfiumError,
+    arabic_line_pdf,
+    check_reading_order,
+    page_text,
+    page_texts,
+)
+
+# The probe as PDFium 153.0.7999.0, in pypdfium2 5.13.0, reads it: last word first.
+REORDERED = " ".join(reversed(ORDER_PROBE.split()))
 
 
 @pytest.fixture
@@ -97,3 +109,57 @@ def test_progress_is_reported_after_every_page(three_pages: Path) -> None:
     calls: list[tuple[int, int]] = []
     page_texts(three_pages, on_page=lambda number, count: calls.append((number, count)))
     assert calls == [(1, 3), (2, 3), (3, 3)]
+
+
+def test_an_arabic_line_is_read_in_the_order_it_is_written(tmp_path: Path) -> None:
+    # Drawn from its left end, last word first, as Adobe's software draws
+    # Arabic: this is the test that fails on a build that reorders words.
+    path = tmp_path / "line.pdf"
+    path.write_bytes(arabic_line_pdf(ORDER_PROBE))
+    assert page_text(path, 1) == ORDER_PROBE
+
+
+@pytest.fixture
+def unchecked() -> Iterator[None]:
+    """Forget, before and after the test, that the installed PDFium passed the check."""
+    check_reading_order.cache_clear()
+    yield
+    check_reading_order.cache_clear()
+
+
+@pytest.mark.usefixtures("unchecked")
+def test_a_pdfium_that_reorders_arabic_words_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(extract, "_read_probe", lambda: REORDERED)
+    with pytest.raises(UnsupportedPdfiumError, match="out of order") as refused:
+        check_reading_order()
+    assert 'uv pip install -e ".[dev]"' in str(refused.value)
+
+
+@pytest.mark.usefixtures("unchecked")
+def test_no_page_is_read_with_such_a_pdfium(
+    three_pages: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    read: list[int] = []
+    monkeypatch.setattr(extract, "_read_probe", lambda: REORDERED)
+    monkeypatch.setattr(extract, "_text_of", lambda document, index: read.append(index) or "")
+    with pytest.raises(UnsupportedPdfiumError):
+        page_texts(three_pages)
+    with pytest.raises(UnsupportedPdfiumError):
+        page_text(three_pages, 1)
+    assert read == []
+
+
+@pytest.mark.usefixtures("unchecked")
+def test_the_check_runs_once(monkeypatch: pytest.MonkeyPatch, three_pages: Path) -> None:
+    probes: list[str] = []
+    monkeypatch.setattr(extract, "_read_probe", lambda: probes.append("read") or ORDER_PROBE)
+    page_texts(three_pages)
+    page_texts(three_pages)
+    assert probes == ["read"]
+
+
+@pytest.mark.usefixtures("unchecked")
+def test_pdfplumber_needs_no_check(three_pages: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # It is kept for comparison, and its order is measured, not assumed.
+    monkeypatch.setattr(extract, "_read_probe", lambda: REORDERED)
+    assert page_texts(three_pages, "pdfplumber")[0] == "first page"

@@ -291,7 +291,11 @@ ground truth, which is not redistributed.
 
 Text extraction uses **pypdfium2** (BSD-3-Clause or Apache-2.0), chosen by
 measurement: pdfplumber writes Arabic in visual order, spelling every word
-backwards (see [the calibration](eval/results/gate_calibration.md)).
+backwards (see [the calibration](eval/results/gate_calibration.md)). It is
+held below 5.13, whose PDFium puts the words of an Arabic line last word first.
+Each word is still spelled right, so nothing that counts words notices, and
+every command reads a generated Arabic line first and stops on a build that
+reorders it.
 **pdfplumber** (MIT) remains as a comparison backend for the inventory. The
 calendar's grid is rebuilt from PDFium's character boxes instead, which come
 with its text in logical order.
