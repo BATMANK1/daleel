@@ -1,0 +1,167 @@
+{
+  "about": [
+    "Real text from the corpus, one line each, for the normalization tests.",
+    "raw is a line as one source gives it: pypdfium2 or pdftotext reading the text layer, or dots.mocr reading the page.",
+    "printed is the same line in the hand-transcribed ground truth, checked against the page.",
+    "In same, normalization must make the two compare equal; in different, the damage is real and must survive it.",
+    "Presentation forms, invisible characters and combining marks are escaped, so no editor reorders or hides them.",
+    "Built by reading each source; the documents themselves are not redistributed."
+  ],
+  "same": [
+    {
+      "name": "damma_before_its_letter",
+      "doc": "student_guide_2025",
+      "page": 30,
+      "source": "pypdfium2",
+      "raw": "\u064fيمنح الطالب تقدير ",
+      "printed": "يُمنح الطالب تقدير",
+      "why": "PDFium puts the damma of the first letter before it."
+    },
+    {
+      "name": "tanween_before_its_word",
+      "doc": "student_guide_2025",
+      "page": 30,
+      "source": "pypdfium2",
+      "raw": "\u064b يوما ولا تحتسب من",
+      "printed": "يومًا ولا تحتسب من",
+      "why": "PDFium puts the tanween of the first word before it, as a word of its own."
+    },
+    {
+      "name": "kashida_justification",
+      "doc": "student_guide_2025",
+      "page": 30,
+      "source": "pypdfium2",
+      "raw": "يتـم احتسـاب غيـاب الطالـب الناتـج عـن المشـاركة في ",
+      "printed": "يتم احتساب غياب الطالب الناتج عن المشاركة في",
+      "why": "Justified lines are stretched with tatweel."
+    },
+    {
+      "name": "presentation_forms_and_a_ligature",
+      "doc": "student_guide_2025",
+      "page": 30,
+      "source": "pdftotext",
+      "raw": "\u202bد\ufedf\ufef4\ufede ا\ufedf\ufec4\ufe8e\ufedf\ufe90 \ufc32\u202c",
+      "printed": "دليل الطالب في",
+      "why": "pdftotext stores display forms, في as one ligature, and wraps the line in embedding marks."
+    },
+    {
+      "name": "lam_alef_ligature_and_tatweel",
+      "doc": "student_guide_2025",
+      "page": 30,
+      "source": "pdftotext",
+      "raw": "\u202bا\ufefb\ufea7\ufe98\ufe92ـــــــــــــ\ufe8eرات\u202c",
+      "printed": "الاختبارات",
+      "why": "A lam-alef ligature in a title stretched with tatweel."
+    },
+    {
+      "name": "hijri_suffix_with_tatweel",
+      "doc": "academic_weeks_1448",
+      "page": 1,
+      "source": "pypdfium2",
+      "raw": "1448/03/10هـ",
+      "printed": "1448/03/10ه",
+      "why": "The Hijri suffix is printed with a tatweel, which ground truth does not type (rule 3.3)."
+    },
+    {
+      "name": "calendar_presentation_forms",
+      "doc": "academic_weeks_1448",
+      "page": 1,
+      "source": "pdftotext",
+      "raw": "\u202bإ\ufe9f\ufe8eزة ا\ufedf\ufef4\ufeeeم ا\ufedf\ufeee\ufec3\ufc8f\u202c",
+      "printed": "إجازة اليوم الوطني",
+      "why": "The calendar's display forms, ني among them as one ligature."
+    },
+    {
+      "name": "ocr_writes_the_tatweel",
+      "doc": "academic_weeks_1448",
+      "page": 1,
+      "source": "dots.mocr",
+      "raw": "التقويم الأكاديمي للعام الدراسي 1448 - 1449 هـ / 2026 - 2027",
+      "printed": "التقويم الأكاديمي للعام الدراسي 1448 - 1449 ه / 2026 - 2027",
+      "why": "dots.mocr writes the suffix with its tatweel."
+    },
+    {
+      "name": "ocr_tatweel_before_latin",
+      "doc": "library_services_2024_2025",
+      "page": 10,
+      "source": "dots.mocr",
+      "raw": "أن أيقونة المكتبة الرقمية متاحة على منصات الكلية والمعهد مثل الـ",
+      "printed": "أن أيقونة المكتبة الرقمية متاحة على منصات الكلية والمعهد مثل ال",
+      "why": "The article before BlackBoard is printed stretched."
+    },
+    {
+      "name": "page_prints_haa_for_taa_marbuta",
+      "doc": "orientation_1446",
+      "page": 3,
+      "source": "dots.mocr",
+      "raw": "تم توفير خدمة الطلب عن طريق تطبيق أحد المتاجر عبر الباركود",
+      "printed": "تم توفير خدمه الطلب عن طريق تطبيق أحد المتاجر عبر الباركود",
+      "why": "The page prints خدمه with a haa; dots.mocr writes خدمة."
+    },
+    {
+      "name": "ocr_drops_the_hamza",
+      "doc": "organizational_regulations",
+      "page": 33,
+      "source": "dots.mocr",
+      "raw": "اصدار شهادة دراسية أو كشف الدرجات",
+      "printed": "إصدار شهادة دراسية أو كشف الدرجات",
+      "why": "The page prints إصدار; dots.mocr writes اصدار."
+    },
+    {
+      "name": "ocr_drops_a_printed_damma",
+      "doc": "student_charter",
+      "page": 4,
+      "source": "dots.mocr",
+      "raw": "ولأهمية توعية الطلبة وتبصيرهم بحقوقهم وواجباتهم أعد هذا الميثاق.",
+      "printed": "ولأهمية توعية الطلبة وتبصيرهم بحقوقهم وواجباتهم أُعد هذا الميثاق.",
+      "why": "The page prints the damma on أُعد; dots.mocr leaves it out."
+    }
+  ],
+  "different": [
+    {
+      "name": "word_export_drops_letters",
+      "doc": "guidance_manual",
+      "page": 2,
+      "source": "pypdfium2",
+      "raw": "والت ويب الت ن الذي ي كز عمى متطم ات الصن اعة. ",
+      "printed": "والتدريب التقني الذي يركز على متطلبات الصناعة.",
+      "why": "The Word export's text layer lost and substituted letters."
+    },
+    {
+      "name": "substitution_that_is_a_word",
+      "doc": "guidance_manual",
+      "page": 2,
+      "source": "pypdfium2",
+      "raw": "وكالة شؤون الطالب",
+      "printed": "وكالة شؤون الطلاب",
+      "why": "The footer's الطلاب is stored as الطالب, a different word that is also real."
+    },
+    {
+      "name": "powerpoint_export_swaps_letters",
+      "doc": "library_services_2024_2025",
+      "page": 10,
+      "source": "pypdfium2",
+      "raw": "تضم مجموعات املكتبة الرقمية العديد من قواعد املعلومات العامة",
+      "printed": "تضم مجموعات المكتبة الرقمية العديد من قواعد المعلومات العامة",
+      "why": "The PowerPoint export stores المكتبة with its lam and meem swapped."
+    },
+    {
+      "name": "word_export_mangles_a_line",
+      "doc": "orientation_1446",
+      "page": 3,
+      "source": "pypdfium2",
+      "raw": "اإللكت وني حسا دليخ المقاسات.",
+      "printed": "الإلكتروني حسب دليل المقاسات.",
+      "why": "The Word export's text layer lost letters and substituted others."
+    },
+    {
+      "name": "ocr_misreads_letters",
+      "doc": "library_services_2024_2025",
+      "page": 10,
+      "source": "dots.mocr",
+      "raw": "المتبة الرقمية السعورية",
+      "printed": "المكتبة الرقمية السعودية",
+      "why": "dots.mocr misreads the calligraphic title."
+    }
+  ]
+}
