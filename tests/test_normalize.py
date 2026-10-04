@@ -5,9 +5,16 @@ characters and presentation forms appear as escapes because they cannot be
 seen, and a test that relies on what an editor displays can't be trusted.
 Several cases are printed inconsistencies recorded in the ground truth, which
 normalization must make compare equal.
+
+The last tests run on real lines from every document with hand-transcribed
+ground truth, kept in tests/fixtures/normalization_samples.json: each line as a
+text layer or dots.mocr gives it, beside the same line as the page prints it.
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import pytest
 
@@ -226,3 +233,37 @@ def test_a_comma_matches_in_either_script() -> None:
 )
 def test_blank_text_normalizes_to_nothing(text: str) -> None:
     assert for_comparison(text) == ""
+
+
+SAMPLES = json.loads(
+    (Path(__file__).parent / "fixtures" / "normalization_samples.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.mark.parametrize("sample", SAMPLES["same"], ids=[s["name"] for s in SAMPLES["same"]])
+def test_real_text_matches_its_page_once_normalized(sample: dict) -> None:
+    # Each raw line differs from the page only in how it is encoded.
+    assert sample["raw"] != sample["printed"]
+    assert for_comparison(sample["raw"]) == for_comparison(sample["printed"])
+
+
+@pytest.mark.parametrize(
+    "sample", SAMPLES["different"], ids=[s["name"] for s in SAMPLES["different"]]
+)
+def test_real_damage_survives_normalization(sample: dict) -> None:
+    # A broken text layer or a misread page is the gate's and the engine's
+    # business: normalization must not make it look right.
+    assert for_comparison(sample["raw"]) != for_comparison(sample["printed"])
+
+
+def test_the_samples_come_from_every_document_with_ground_truth() -> None:
+    documents = {sample["doc"] for sample in SAMPLES["same"] + SAMPLES["different"]}
+    assert documents == {
+        "academic_weeks_1448",
+        "guidance_manual",
+        "library_services_2024_2025",
+        "organizational_regulations",
+        "orientation_1446",
+        "student_charter",
+        "student_guide_2025",
+    }
