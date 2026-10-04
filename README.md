@@ -220,6 +220,12 @@ Every OCR reading is kept in `data/interim/ocr_cache/`, keyed on the engine and
 the page image, so a second run reads no page again, and an interrupted run
 resumes where it stopped.
 
+The whole corpus has been extracted. Of its 257 pages, 177 kept their text
+layer, and dots.mocr read the other 80 in 48 minutes on the machine described
+in [`eval/results/ocr.md`](eval/results/ocr.md): 22 seconds a page at the
+median, and 139 seconds at most, for a page of the regulations drawn without a
+text layer. Two library slides were read again for their text.
+
 ## Calendar
 
 The academic calendar answers what students ask most often: when drop and add
