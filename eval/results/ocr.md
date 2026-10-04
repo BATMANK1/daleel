@@ -249,6 +249,8 @@ that answers students' questions about dates and deadlines.
 - **Its cost is time.** Two to four and a half minutes a page on this GPU,
   against 11 seconds for PaddleOCR on the CPU. OCR runs once, when a document
   is ingested, so this is paid once per page rather than once per question.
+  Reading the whole corpus later was faster: 80 pages in 48 minutes, 22
+  seconds a page at the median and 139 at most (README, Extraction).
 
 ## 5. Limits
 
