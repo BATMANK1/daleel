@@ -1,0 +1,250 @@
+"""The gold question set, and the checks it must pass before it is frozen.
+
+Retrieval and answers are measured against these questions, so a mistake in
+them corrupts every table that follows. The working set is
+eval/gold_draft.jsonl. Once every answer has been checked by hand against its
+page, it is copied to eval/gold_v1.jsonl and never changed again; a mistake
+found later goes into a gold_v2.jsonl, reported beside the first.
+
+The set follows the composition of the project spec's section 8: 80 questions
+of eight types, from single clauses and numbers to questions the corpus
+cannot answer. Each question names the pages that answer it, by the PDF's own
+page numbers from 1, and a topic group: questions that ask the same thing in
+other words, or in English, share one, and a group is never divided between
+the questions used for development and the 20 held out for the end.
+
+What a correct answer does follows from whether the corpus can answer the
+question at all. Most are answered and cited. Where two documents disagree,
+both are shown. Where they cover different cases, the cases are told apart.
+Where the corpus holds only part of the answer, that part is given and what is
+missing is named, without inventing it. Only a question about something the
+corpus never mentions is refused.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections import Counter
+from collections.abc import Sequence
+from pathlib import Path
+
+GOLD_DRAFT = Path("eval/gold_draft.jsonl")
+GOLD_V1 = Path("eval/gold_v1.jsonl")
+
+# Every document a question may cite, and its number of pages, as
+# data/README.md lists them.
+CORPUS = {
+    "academic_weeks_1448": 3,
+    "guidance_manual": 19,
+    "library_services_2024_2025": 16,
+    "organizational_regulations": 58,
+    "orientation_1446": 13,
+    "student_charter": 8,
+    "student_conduct_code": 12,
+    "student_guide_2025": 86,
+    "student_portal_guide": 42,
+}
+
+# The spec's composition: how many questions of each type.
+COMPOSITION = {
+    "single_clause": 25,
+    "numeric": 15,
+    "multi_clause": 10,
+    "table_lookup": 8,
+    "cross_document": 6,
+    "precedence": 4,
+    "out_of_scope": 8,
+    "english_query": 4,
+}
+
+# What a correct answer does, by how far the corpus answers the question.
+BEHAVIOR = {
+    "supported": "answer",
+    "document_conflict": "show_both_sources",
+    "scope_comparison": "tell_the_cases_apart",
+    "unsupported_detail": "answer_and_name_the_gap",
+    "needs_course_context": "answer_and_name_the_gap",
+    "outside_corpus": "refuse",
+}
+ANSWERABLE = frozenset({"supported", "document_conflict", "scope_comparison"})
+
+# A reference either holds the answer or only touches the topic, as for a
+# question the corpus cannot answer.
+ROLES = ("answer_evidence", "related_only")
+SPLITS = ("dev", "final")
+FINAL_SIZE = 20
+
+FIELDS = frozenset(
+    {
+        "qid",
+        "lang",
+        "type",
+        "question",
+        "source_type",
+        "raw_question_numbers",
+        "original_questions",
+        "context_added",
+        "topic_group",
+        "answerable",
+        "answerability_status",
+        "expected_behavior",
+        "source_refs",
+        "subtype",
+        "status",
+        "human_reviewed",
+        "chunk_mapping_status",
+        "split",
+    }
+)
+REQUIRED = frozenset(
+    {
+        "qid",
+        "lang",
+        "type",
+        "question",
+        "topic_group",
+        "answerable",
+        "answerability_status",
+        "source_refs",
+        "human_reviewed",
+        "split",
+    }
+)
+QID = re.compile(r"g\d{3}")
+
+
+def load_gold(path: Path) -> list[dict]:
+    """The questions in a gold JSONL file, in file order."""
+    questions = []
+    with path.open(encoding="utf-8") as file:
+        for number, line in enumerate(file, start=1):
+            if not line.strip():
+                continue
+            try:
+                questions.append(json.loads(line))
+            except json.JSONDecodeError as error:
+                raise ValueError(f"{path}, line {number}: {error}") from error
+    return questions
+
+
+def behavior(question: dict) -> str:
+    """What a correct answer to the question does."""
+    return BEHAVIOR[question["answerability_status"]]
+
+
+def composition(questions: Sequence[dict]) -> Counter[str]:
+    """How many questions there are of each type."""
+    return Counter(question.get("type") for question in questions)
+
+
+def _ref_problems(qid: str, ref: object) -> list[str]:
+    if not isinstance(ref, dict):
+        return [f"{qid}: a source reference is not an object"]
+    found = []
+    doc, page = ref.get("doc_id"), ref.get("pdf_page")
+    if doc not in CORPUS:
+        found.append(f"{qid}: cites {doc!r}, which is not in the corpus")
+    elif not isinstance(page, int) or not 1 <= page <= CORPUS[doc]:
+        found.append(f"{qid}: cites page {page!r} of {doc}, which has {CORPUS[doc]} pages")
+    if ref.get("role") not in ROLES:
+        found.append(f"{qid}: a reference's role is {ref.get('role')!r}")
+    return found
+
+
+def question_problems(question: dict) -> list[str]:
+    """Everything wrong with one question, or nothing."""
+    qid = question.get("qid", "?")
+    missing = sorted(REQUIRED - question.keys())
+    unknown = sorted(question.keys() - FIELDS)
+    found = [f"{qid}: missing {', '.join(missing)}"] if missing else []
+    if unknown:
+        found.append(f"{qid}: unknown field {', '.join(unknown)}")
+    if missing:
+        return found
+
+    kind, status = question["type"], question["answerability_status"]
+    if not isinstance(qid, str) or not QID.fullmatch(qid):
+        found.append(f"{qid}: an id is g and three digits")
+    if question["lang"] not in ("ar", "en"):
+        found.append(f"{qid}: language {question['lang']!r}")
+    if kind not in COMPOSITION:
+        found.append(f"{qid}: unknown type {kind!r}")
+    if not str(question["question"]).strip():
+        found.append(f"{qid}: no question")
+    if not str(question["topic_group"]).strip():
+        found.append(f"{qid}: no topic group")
+    if status not in BEHAVIOR:
+        found.append(f"{qid}: unknown answerability {status!r}")
+        return found
+    if not isinstance(question["human_reviewed"], bool):
+        found.append(f"{qid}: human_reviewed is not true or false")
+    if question["split"] not in (None, *SPLITS):
+        found.append(f"{qid}: split {question['split']!r}")
+
+    answerable = status in ANSWERABLE
+    if question["answerable"] is not answerable:
+        found.append(f"{qid}: answerable is {question['answerable']}, but its status is {status}")
+    conflict = status in ("document_conflict", "scope_comparison")
+    if (kind == "out_of_scope") == answerable or (kind == "precedence") != conflict:
+        found.append(f"{qid}: type {kind} does not fit status {status}")
+    if kind == "english_query" and question["lang"] != "en":
+        found.append(f"{qid}: an English query in {question['lang']!r}")
+
+    refs = question["source_refs"]
+    if not isinstance(refs, list):
+        return [*found, f"{qid}: source_refs is not a list"]
+    for ref in refs:
+        found += _ref_problems(qid, ref)
+    evidence = [
+        ref for ref in refs if isinstance(ref, dict) and ref.get("role") == "answer_evidence"
+    ]
+    if answerable and not evidence:
+        found.append(f"{qid}: answerable, but no reference holds the answer")
+    if not answerable and evidence:
+        found.append(f"{qid}: not answerable, but a reference is marked as holding the answer")
+    if status != "outside_corpus" and not refs:
+        found.append(f"{qid}: no source reference")
+    if kind == "cross_document" and len({ref.get("doc_id") for ref in evidence}) < 2:
+        found.append(f"{qid}: a cross-document question answered from one document")
+    return found
+
+
+def split_problems(questions: Sequence[dict]) -> list[str]:
+    """Problems with how the questions are divided between development and the end."""
+    splits = [question.get("split") for question in questions]
+    if all(split is None for split in splits):
+        return []
+    found = []
+    if None in splits:
+        found.append(f"{splits.count(None)} questions have no split")
+    final = splits.count("final")
+    if final != FINAL_SIZE:
+        found.append(f"{final} questions are held out, not {FINAL_SIZE}")
+    groups: dict[str, set] = {}
+    for question in questions:
+        groups.setdefault(question.get("topic_group"), set()).add(question.get("split"))
+    for group, used in sorted(groups.items(), key=lambda item: str(item[0])):
+        if len(used) > 1:
+            found.append(
+                f"topic group {group} is divided between {', '.join(sorted(map(str, used)))}"
+            )
+    return found
+
+
+def problems(questions: Sequence[dict]) -> list[str]:
+    """Everything wrong with a gold set, or nothing: each question, the ids,
+    the composition, and the split."""
+    found = []
+    for question in questions:
+        found += question_problems(question)
+    repeated = sorted(
+        qid for qid, count in Counter(q.get("qid") for q in questions).items() if count > 1
+    )
+    if repeated:
+        found.append(f"repeated ids: {', '.join(map(str, repeated))}")
+    counts = composition(questions)
+    for kind, expected in COMPOSITION.items():
+        if counts[kind] != expected:
+            found.append(f"{counts[kind]} {kind} questions, where the spec has {expected}")
+    return found + split_problems(questions)
