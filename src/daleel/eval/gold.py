@@ -19,6 +19,14 @@ both are shown. Where they cover different cases, the cases are told apart.
 Where the corpus holds only part of the answer, that part is given and what is
 missing is named, without inventing it. Only a question about something the
 corpus never mentions is refused.
+
+Each answering page carries quotes: the words of the page that hold the
+answer, a string each, or a list of strings that must stand together, as the
+cells of one table row or the title and date of one calendar card do. Whether
+a retrieved chunk holds the evidence is decided by finding the quotes in it,
+not by naming chunks, so the frozen set outlives any change to how the corpus
+is chunked. Every quote must be found in its page's extracted text, once both
+are normalized for comparison.
 """
 
 from __future__ import annotations
@@ -26,8 +34,10 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+
+from daleel.normalize.arabic import for_comparison
 
 GOLD_DRAFT = Path("eval/gold_draft.jsonl")
 GOLD_V1 = Path("eval/gold_v1.jsonl")
@@ -95,8 +105,12 @@ FIELDS = frozenset(
         "human_reviewed",
         "chunk_mapping_status",
         "split",
+        "answer",
+        "answer_numeric",
+        "notes",
     }
 )
+REF_FIELDS = frozenset({"doc_id", "pdf_page", "section", "role", "verification", "quotes"})
 REQUIRED = frozenset(
     {
         "qid",
@@ -138,10 +152,34 @@ def composition(questions: Sequence[dict]) -> Counter[str]:
     return Counter(question.get("type") for question in questions)
 
 
+def fragments(quotes: Sequence[str | Sequence[str]]) -> list[str]:
+    """Every string in a reference's quotes, groups opened up."""
+    return [text for quote in quotes for text in ([quote] if isinstance(quote, str) else quote)]
+
+
+def _quote_problems(qid: str, ref: dict) -> list[str]:
+    quotes = ref["quotes"]
+    where = f"{qid}, {ref.get('doc_id')} page {ref.get('pdf_page')}"
+    if ref.get("role") != "answer_evidence":
+        return [f"{where}: quotes on a reference that does not hold the answer"]
+    if not isinstance(quotes, list) or not quotes:
+        return [f"{where}: quotes is not a list of quotes"]
+    for quote in quotes:
+        group = [quote] if isinstance(quote, str) else quote
+        if not isinstance(group, list) or not group:
+            return [f"{where}: a quote is neither a string nor a list of strings"]
+        if not all(isinstance(text, str) and for_comparison(text) for text in group):
+            return [f"{where}: a quote is empty"]
+    return []
+
+
 def _ref_problems(qid: str, ref: object) -> list[str]:
     if not isinstance(ref, dict):
         return [f"{qid}: a source reference is not an object"]
     found = []
+    unknown = sorted(ref.keys() - REF_FIELDS)
+    if unknown:
+        found.append(f"{qid}: a reference has unknown field {', '.join(unknown)}")
     doc, page = ref.get("doc_id"), ref.get("pdf_page")
     if doc not in CORPUS:
         found.append(f"{qid}: cites {doc!r}, which is not in the corpus")
@@ -149,6 +187,27 @@ def _ref_problems(qid: str, ref: object) -> list[str]:
         found.append(f"{qid}: cites page {page!r} of {doc}, which has {CORPUS[doc]} pages")
     if ref.get("role") not in ROLES:
         found.append(f"{qid}: a reference's role is {ref.get('role')!r}")
+    if "quotes" in ref:
+        found += _quote_problems(qid, ref)
+    return found
+
+
+def _answer_problems(qid: str, question: dict, evidence: list[dict]) -> list[str]:
+    answer = question.get("answer")
+    if answer is None:
+        if question["human_reviewed"] is True:
+            return [f"{qid}: checked by hand, but there is no answer"]
+        return []
+    found = []
+    if not isinstance(answer, str) or not answer.strip():
+        found.append(f"{qid}: an empty answer")
+    numeric = question.get("answer_numeric")
+    if numeric is not None and (isinstance(numeric, bool) or not isinstance(numeric, int | float)):
+        found.append(f"{qid}: answer_numeric is not a number")
+    unquoted = [ref for ref in evidence if not ref.get("quotes")]
+    if unquoted:
+        pages = ", ".join(f"{ref.get('doc_id')} page {ref.get('pdf_page')}" for ref in unquoted)
+        found.append(f"{qid}: answered, but no quote from {pages}")
     return found
 
 
@@ -207,7 +266,7 @@ def question_problems(question: dict) -> list[str]:
         found.append(f"{qid}: no source reference")
     if kind == "cross_document" and len({ref.get("doc_id") for ref in evidence}) < 2:
         found.append(f"{qid}: a cross-document question answered from one document")
-    return found
+    return found + _answer_problems(qid, question, evidence)
 
 
 def split_problems(questions: Sequence[dict]) -> list[str]:
@@ -248,3 +307,26 @@ def problems(questions: Sequence[dict]) -> list[str]:
         if counts[kind] != expected:
             found.append(f"{counts[kind]} {kind} questions, where the spec has {expected}")
     return found + split_problems(questions)
+
+
+def evidence_problems(questions: Sequence[dict], pages: Mapping[tuple[str, int], str]) -> list[str]:
+    """Every quote not found in its page's text, both normalized for comparison.
+
+    `pages` maps a document and a PDF page number to the page's extracted text.
+    """
+    found = []
+    normalized: dict[tuple[str, int], str] = {}
+    for question in questions:
+        for ref in question.get("source_refs", []):
+            key = (ref.get("doc_id"), ref.get("pdf_page"))
+            for text in fragments(ref.get("quotes", [])):
+                if key not in pages:
+                    found.append(f"{question['qid']}: no text for {key[0]} page {key[1]}")
+                    break
+                if key not in normalized:
+                    normalized[key] = for_comparison(pages[key])
+                if for_comparison(text) not in normalized[key]:
+                    found.append(
+                        f"{question['qid']}: {key[0]} page {key[1]} does not hold {text!r}"
+                    )
+    return found

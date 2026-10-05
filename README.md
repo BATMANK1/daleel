@@ -284,7 +284,7 @@ daleel calendar data/raw/academic_weeks_1448.pdf  # the calendar's events, a row
 sha256sum -c data/SHA256SUMS                      # check your copies of the documents
 python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made of
 python3 scripts/check_calendar_csv.py <csv> <ics> # check a page of calendar rows
-python3 scripts/check_gold.py                     # check the gold question set
+python3 scripts/check_gold.py --records           # check the gold set, its quotes against the pages
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
