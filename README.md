@@ -268,6 +268,38 @@ The later pages' quirks stay as printed, as ground truth keeps them: page 2's
 before a date's suffix, and a Hijri range over two lines, each a full date
 with its own suffix. The checks read all of these.
 
+## Chunking
+
+`daleel chunk` cuts the records into chunks along the documents' own
+structure, since a chunk cut through the middle of a clause cites nothing. A
+heading is a title or section header in an OCR page's layout, an article's
+label, a numbered part such as `ثانياً:`, or one of the sections the student
+guide's table of contents lists. A unit starts at a numbered clause (`.1`,
+`1-`, `1)`), a bullet or a layout block. Running headers, page numbers and
+pictures are left out. Units shorter than 40 words merge with their
+neighbours under the same heading on the same page, and units longer than 180
+are split at a sentence end, with 30 words of overlap. A chunk never spans two
+pages, so it always cites a single page.
+
+The regulations' text layer prints each article's label at the end of the
+article's first line, because the margin holding the label is read with that
+line. Those labels are taken as headings when they end in a colon or follow
+the last article's number. A passing reference such as `في المادة الخامسة` is
+not taken as a heading. This finds 71 of the regulations' 72 articles and all
+37 of the conduct code's. The one it misses, article 1, has no label in the
+extracted text.
+
+```bash
+daleel chunk    # data/interim/extracted/ to data/processed/chunks.jsonl
+```
+
+The 257 pages give 735 chunks. Every chunk carries the metadata from the
+spec's section 7: the document's title, scope and date, the chunk's page,
+heading and clause number, whether it is a clause, prose or a table, and how
+its page was extracted. Two kinds of content wait for rows of their own: the
+calendar's cards, which come in whole-page windows here, and tables whose text
+layer scatters their cells, such as the student guide's fee table.
+
 ## Usage
 
 ```bash
@@ -281,6 +313,7 @@ daleel gate data/raw/                             # verdicts per document
 daleel gate data/raw/ --pages                     # verdicts per page, with reasons
 daleel extract data/raw/                          # every page's text as a record (OCR: see above)
 daleel calendar data/raw/academic_weeks_1448.pdf  # the calendar's events, a row for each
+daleel chunk                                      # the records cut into chunks, with their metadata
 sha256sum -c data/SHA256SUMS                      # check your copies of the documents
 python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made of
 python3 scripts/check_calendar_csv.py <csv> <ics> # check a page of calendar rows

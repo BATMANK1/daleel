@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import statistics
 import sys
 from collections import Counter
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from daleel.chunk.chunker import CHUNKS, CLAUSE, TABLE, document_chunks, words, write_chunks
 from daleel.ingest.calendar import CALENDAR, CalendarPage, read_calendar, write_csv
 from daleel.ingest.extract import BACKENDS, UnsupportedPdfiumError
 from daleel.ingest.gate import (
@@ -22,7 +24,13 @@ from daleel.ingest.gate import (
 from daleel.ingest.inventory import format_table, inventory_dir, to_json
 from daleel.ingest.lexicon import LEXICON_ZIP
 from daleel.ingest.metadata import PdfMetadata, read_metadata
-from daleel.ingest.records import RECORDS, PageRecord, extract_document, write_records
+from daleel.ingest.records import (
+    RECORDS,
+    PageRecord,
+    extract_document,
+    read_records,
+    write_records,
+)
 from daleel.ingest.router import ExtractionPath, route
 from daleel.ocr import dots
 from daleel.ocr.cache import CACHE, CachedReader
@@ -546,6 +554,90 @@ def _run_calendar(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- chunk -------------------------------------------------------------------
+
+_CHUNK_COLUMNS = (
+    ("document", "document"),
+    ("pages", "pages"),
+    ("chunks", "chunks"),
+    ("clauses", "clauses"),
+    ("tables", "tables"),
+    ("median_words", "median words"),
+    ("max_words", "most words"),
+)
+
+
+def chunk_summary(doc_id: str, pages: int, chunks: Sequence[dict]) -> dict:
+    """One document's chunks: how many, of which kinds, and how long."""
+    sizes = [words(chunk["text"]) for chunk in chunks]
+    kinds = Counter(chunk["content_type"] for chunk in chunks)
+    return {
+        "document": doc_id,
+        "pages": pages,
+        "chunks": len(chunks),
+        "clauses": kinds[CLAUSE],
+        "tables": kinds[TABLE],
+        "median_words": round(statistics.median(sizes)) if sizes else None,
+        "max_words": max(sizes, default=None),
+    }
+
+
+def _add_chunk_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "chunk",
+        help="cut every document's records into chunks along its headings and clauses",
+        description=(
+            "Cut the extracted records into chunks along the documents' own structure: "
+            "headings, articles and numbered clauses, merging what is too short to stand "
+            "alone and splitting what is too long. Every chunk carries its document's "
+            "title, scope and date, its page, heading and clause number, and how its page "
+            "was extracted. The chunks of every document are written to OUT, one per line."
+        ),
+    )
+    parser.add_argument(
+        "--records",
+        type=Path,
+        default=RECORDS,
+        help="folder of extracted records (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=CHUNKS, help="file for the chunks (default: %(default)s)"
+    )
+    parser.add_argument("--json", action="store_true", help="emit the summary as JSON")
+
+
+def _run_chunk(args: argparse.Namespace) -> int:
+    error = _directory_error(args.records)
+    if error is not None:
+        return error
+    files = sorted(args.records.glob("*.jsonl"))
+    if not files:
+        print(
+            f"error: no records in {args.records}. Extract them with: daleel extract data/raw/",
+            file=sys.stderr,
+        )
+        return 1
+
+    chunks, summaries = [], []
+    for path in files:
+        records = sorted(read_records(path), key=lambda record: record["page"])
+        try:
+            found = document_chunks(records)
+        except ValueError as exc:
+            print(f"error: {path}: {exc}", file=sys.stderr)
+            return 1
+        chunks += found
+        summaries.append(chunk_summary(path.stem, len(records), found))
+    write_chunks(chunks, args.out)
+
+    if args.json:
+        print(json.dumps(summaries, indent=2, ensure_ascii=False))
+    else:
+        print(_format_rows(summaries, _CHUNK_COLUMNS))
+        print(f"{len(chunks)} chunks written to {args.out}")
+    return 0
+
+
 # --- entry point -------------------------------------------------------------
 
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
@@ -554,6 +646,7 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "gate": _run_gate,
     "extract": _run_extract,
     "calendar": _run_calendar,
+    "chunk": _run_chunk,
 }
 
 
@@ -568,6 +661,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_gate_parser(subparsers)
     _add_extract_parser(subparsers)
     _add_calendar_parser(subparsers)
+    _add_chunk_parser(subparsers)
     return parser
 
 

@@ -495,3 +495,71 @@ def test_calendar_writes_each_page_s_rows_and_warns_of_a_line_it_could_not_place
             "csv": str(written),
         }
     ]
+
+
+def _write_records(folder: Path, doc_id: str, texts: list[str]) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / f"{doc_id}.jsonl").open("w", encoding="utf-8") as file:
+        for page, text in enumerate(texts, start=1):
+            gate = {"verdict": "trusted", "token_validity": 1.0}
+            record = {"doc_id": doc_id, "page": page, "method": "text_layer", "text": text}
+            file.write(json.dumps({**record, "gate": gate}, ensure_ascii=False) + "\n")
+
+
+def test_chunk_command_is_registered() -> None:
+    assert build_parser().parse_args(["chunk"]).command == "chunk"
+
+
+def test_chunk_names_a_folder_it_cannot_find(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["chunk", "--records", str(tmp_path / "absent")]) == 2
+    assert "does not exist" in capsys.readouterr().err
+
+
+def test_chunk_says_how_to_make_records_it_cannot_find(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["chunk", "--records", str(tmp_path)]) == 1
+    assert "daleel extract" in capsys.readouterr().err
+
+
+def test_chunk_refuses_a_document_outside_the_corpus(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_records(tmp_path / "records", "unknown", ["نص من صفحة"])
+    out = tmp_path / "chunks.jsonl"
+    assert main(["chunk", "--records", str(tmp_path / "records"), "--out", str(out)]) == 1
+    assert "not a document of the corpus" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_chunk_writes_every_document_s_chunks_and_counts_them(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    clauses = "\n".join(["المادة الأولى", ".1 يلتزم الطالب بالحضور", ".2 يلتزم الطالب بالأنظمة"])
+    _write_records(tmp_path / "records", "student_conduct_code", [clauses, "نص الصفحة الثانية هنا"])
+    _write_records(tmp_path / "records", "student_charter", ["حقوق الطالب وواجباته"])
+    out = tmp_path / "processed" / "chunks.jsonl"
+    arguments = ["chunk", "--records", str(tmp_path / "records"), "--out", str(out)]
+
+    assert main(arguments) == 0
+    chunks = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert [chunk["chunk_id"] for chunk in chunks] == [
+        "student_charter_p1_c1",
+        "student_conduct_code_p1_c1",
+        "student_conduct_code_p2_c1",
+    ]
+    assert chunks[1]["section_heading"] == "المادة الأولى"
+    assert "3 chunks written to" in capsys.readouterr().out
+
+    assert main([*arguments, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)[1] == {
+        "document": "student_conduct_code",
+        "pages": 2,
+        "chunks": 2,
+        "clauses": 2,
+        "tables": 0,
+        "median_words": 6,
+        "max_words": 8,
+    }
