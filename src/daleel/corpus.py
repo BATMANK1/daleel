@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 COMMISSION = "commission"
 YANBU = "yanbu"
+# The academic calendar, whose cards are rebuilt from their places on the page.
+CALENDAR_DOCUMENT = "academic_weeks_1448"
 
 
 @dataclass(frozen=True)
