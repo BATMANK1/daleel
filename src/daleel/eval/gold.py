@@ -1,17 +1,17 @@
-"""The gold question set, and the checks it must pass before it is frozen.
+"""The gold question set, the checks it passes, and how it was frozen.
 
 Retrieval and answers are measured against these questions, so a mistake in
-them corrupts every table that follows. The working set is
-eval/gold_draft.jsonl. Once every answer has been checked by hand against its
-page, it is copied to eval/gold_v1.jsonl and never changed again; a mistake
-found later goes into a gold_v2.jsonl, reported beside the first.
+them corrupts every table that follows. The set was drafted in
+eval/gold_draft.jsonl, and once every answer had been checked by hand against
+its page it was frozen as eval/gold_v1.jsonl (freeze), which never changes: a
+mistake found later goes into a gold_v2.jsonl, reported beside the first.
 
 The set has a fixed composition, COMPOSITION: 80 questions of eight types,
 from single clauses and numbers to questions the corpus cannot answer. Each
 question names the pages that answer it, by the PDF's own page numbers from
 1, and a topic group: questions that ask the same thing in other words, or in
 English, share one, and a group is never divided between the questions used
-for development and the 20 held out for the end.
+for development and the 20 held out for the end (choose_final).
 
 What a correct answer does follows from whether the corpus can answer the
 question at all. Most are answered and cited. Where two documents disagree,
@@ -32,15 +32,17 @@ are normalized for comparison.
 from __future__ import annotations
 
 import json
+import random
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from daleel.normalize.arabic import for_comparison
 
-GOLD_DRAFT = Path("eval/gold_draft.jsonl")
 GOLD_V1 = Path("eval/gold_v1.jsonl")
+# What a frozen question's status says.
+FROZEN = "gold_v1"
 
 # Every document a question may cite, and its number of pages, as
 # data/README.md lists them.
@@ -84,6 +86,10 @@ ANSWERABLE = frozenset({"supported", "document_conflict", "scope_comparison"})
 ROLES = ("answer_evidence", "related_only")
 SPLITS = ("dev", "final")
 FINAL_SIZE = 20
+# The held-out questions are chosen from this many orders of the topic groups,
+# shuffled from this seed, so the choice can be made again and checked.
+SPLIT_SEED = 1448
+SPLIT_ORDERS = 20_000
 
 FIELDS = frozenset(
     {
@@ -103,7 +109,6 @@ FIELDS = frozenset(
         "subtype",
         "status",
         "human_reviewed",
-        "chunk_mapping_status",
         "split",
         "answer",
         "answer_numeric",
@@ -289,6 +294,67 @@ def split_problems(questions: Sequence[dict]) -> list[str]:
                 f"topic group {group} is divided between {', '.join(sorted(map(str, used)))}"
             )
     return found
+
+
+def choose_final(
+    questions: Sequence[dict], seed: int = SPLIT_SEED, orders: int = SPLIT_ORDERS
+) -> frozenset[str]:
+    """The ids of the FINAL_SIZE questions held out for the end, in whole topic groups.
+
+    The held-out questions should ask what the rest ask, so each type should
+    be held out in its share of the set: a quarter of each, where whole groups
+    allow. The groups are put in `orders` seeded random orders, and each order
+    is taken group by group while the next group fits; of the orders that fill
+    exactly FINAL_SIZE, the one whose types are nearest their shares wins, the
+    first of them on a tie.
+    """
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for question in questions:
+        groups[question["topic_group"]].append(question)
+    share = {
+        kind: FINAL_SIZE * count / len(questions) for kind, count in composition(questions).items()
+    }
+    names = sorted(groups)
+    shuffle = random.Random(seed).shuffle
+    best: list[str] = []
+    best_distance = float("inf")
+    for _ in range(orders):
+        shuffle(names)
+        chosen, size = [], 0
+        for name in names:
+            if size + len(groups[name]) <= FINAL_SIZE:
+                chosen.append(name)
+                size += len(groups[name])
+        if size != FINAL_SIZE:
+            continue
+        held = Counter(question["type"] for name in chosen for question in groups[name])
+        distance = sum(abs(held[kind] - target) for kind, target in share.items())
+        if distance < best_distance:
+            best, best_distance = list(chosen), distance
+    if not best:
+        raise ValueError(f"no order of the topic groups holds out exactly {FINAL_SIZE}")
+    return frozenset(question["qid"] for name in best for question in groups[name])
+
+
+def freeze(questions: Sequence[dict]) -> list[dict]:
+    """The set as frozen: every question checked by hand, each given its split.
+
+    Refuses a set with any problem, or with a question not yet checked by hand
+    against its page.
+    """
+    found = problems(questions)
+    unchecked = [
+        question["qid"] for question in questions if question.get("human_reviewed") is not True
+    ]
+    if unchecked:
+        found.append(f"not checked by hand: {', '.join(unchecked)}")
+    if found:
+        raise ValueError("cannot freeze: " + "; ".join(found))
+    final = choose_final(questions)
+    return [
+        {**question, "status": FROZEN, "split": "final" if question["qid"] in final else "dev"}
+        for question in questions
+    ]
 
 
 def problems(questions: Sequence[dict]) -> list[str]:

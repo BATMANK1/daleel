@@ -1,7 +1,8 @@
-"""Tests for the gold question set and its checks.
+"""Tests for the gold question set, its checks and its freezing.
 
-The working set is in the repository, so the first tests check it as it
-stands: CI fails if an edit breaks it. The rest build one valid question and
+The frozen set is in the repository, so the first tests check it as it
+stands: CI fails if an edit breaks it, and freezing its questions again must
+give it back exactly. The rest build one valid question and
 break it a field at a time. Whether each quote is on its page needs the
 extracted records, which CI does not have, so that check is tested on page
 texts made up for it.
@@ -18,11 +19,14 @@ from daleel.eval.gold import (
     COMPOSITION,
     CORPUS,
     FINAL_SIZE,
-    GOLD_DRAFT,
+    FROZEN,
+    GOLD_V1,
     behavior,
+    choose_final,
     composition,
     evidence_problems,
     fragments,
+    freeze,
     load_gold,
     problems,
     question_problems,
@@ -30,24 +34,71 @@ from daleel.eval.gold import (
 )
 
 ROOT = Path(__file__).parent.parent
-DRAFT = load_gold(ROOT / GOLD_DRAFT)
+V1 = load_gold(ROOT / GOLD_V1)
 
 
-def test_the_working_set_passes_every_check() -> None:
-    assert problems(DRAFT) == []
+def test_the_frozen_set_passes_every_check() -> None:
+    assert problems(V1) == []
 
 
-def test_the_working_set_has_the_spec_s_composition() -> None:
-    assert composition(DRAFT) == COMPOSITION
-    assert len(DRAFT) == sum(COMPOSITION.values()) == 80
+def test_the_frozen_set_has_its_composition() -> None:
+    assert composition(V1) == COMPOSITION
+    assert len(V1) == sum(COMPOSITION.values()) == 80
 
 
-def test_every_question_in_the_working_set_has_an_answer() -> None:
-    assert all(question.get("answer") for question in DRAFT)
+def test_every_frozen_answer_was_checked_by_hand() -> None:
+    assert all(question.get("answer") for question in V1)
+    assert all(question["human_reviewed"] is True for question in V1)
+    assert {question["status"] for question in V1} == {FROZEN}
+
+
+def unfrozen(questions: list[dict]) -> list[dict]:
+    return [{**question, "split": None, "status": "draft"} for question in questions]
+
+
+def test_freezing_the_set_again_gives_it_back_exactly() -> None:
+    assert freeze(unfrozen(V1)) == V1
+
+
+def test_the_held_out_questions_hold_each_type_in_its_share() -> None:
+    final = [question for question in V1 if question["split"] == "final"]
+    assert len(final) == FINAL_SIZE
+    held, everyone = composition(final), composition(V1)
+    for kind, count in everyone.items():
+        assert abs(held[kind] - count * FINAL_SIZE / len(V1)) < 1
+
+
+def test_freezing_refuses_a_question_not_checked_by_hand() -> None:
+    questions = unfrozen(V1)
+    questions[4] = {**questions[4], "human_reviewed": False}
+    with pytest.raises(ValueError, match="not checked by hand: g005"):
+        freeze(questions)
+
+
+def test_freezing_refuses_a_set_with_problems() -> None:
+    with pytest.raises(ValueError, match=r"cannot freeze: .*24 single_clause questions, not 25"):
+        freeze(unfrozen(V1)[1:])
+
+
+def test_the_held_out_choice_keeps_groups_whole_and_repeats_itself() -> None:
+    questions = unfrozen(V1)
+    chosen = choose_final(questions)
+    assert chosen == choose_final(questions)
+    groups = {question["topic_group"] for question in questions if question["qid"] in chosen}
+    assert {q["qid"] for q in questions if q["topic_group"] in groups} == chosen
+    assert choose_final(questions, seed=7) != chosen
+
+
+def test_a_held_out_set_no_order_can_fill_is_an_error() -> None:
+    questions = [
+        {"qid": f"g{n:03d}", "topic_group": f"t{n // 3}", "type": "numeric"} for n in range(30)
+    ]
+    with pytest.raises(ValueError, match="holds out exactly 20"):
+        choose_final(questions, orders=50)
 
 
 def test_three_questions_are_refused_and_five_answered_in_part() -> None:
-    by_qid = {question["qid"]: behavior(question) for question in DRAFT}
+    by_qid = {question["qid"]: behavior(question) for question in V1}
     assert [qid for qid, b in sorted(by_qid.items()) if b == "refuse"] == ["g074", "g075", "g076"]
     assert [qid for qid, b in sorted(by_qid.items()) if b == "answer_and_name_the_gap"] == [
         "g069",
@@ -305,7 +356,7 @@ def test_a_split_holds_out_exactly_twenty() -> None:
 
 
 def test_an_unsplit_set_is_not_yet_a_problem() -> None:
-    assert split_problems(DRAFT) == []
+    assert split_problems(unfrozen(V1)) == []
 
 
 def test_a_partly_split_set_is_reported() -> None:

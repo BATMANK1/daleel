@@ -3,7 +3,7 @@
 
     python3 scripts/check_gold.py [path] [--records DIR]
 
-The path defaults to eval/gold_draft.jsonl. Prints how many questions there
+The path defaults to eval/gold_v1.jsonl. Prints how many questions there
 are of each type against the set's composition, how many a correct answer
 should answer, refuse or qualify, how many are answered and how many checked
 by hand, and every problem found, then exits with 1 if there is any.
@@ -25,7 +25,7 @@ from pathlib import Path
 
 from daleel.eval.gold import (
     COMPOSITION,
-    GOLD_DRAFT,
+    GOLD_V1,
     behavior,
     composition,
     evidence_problems,
@@ -37,7 +37,7 @@ from daleel.ingest.records import RECORDS, read_records
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check a gold question set.")
-    parser.add_argument("path", nargs="?", type=Path, default=GOLD_DRAFT)
+    parser.add_argument("path", nargs="?", type=Path, default=GOLD_V1)
     parser.add_argument("--records", nargs="?", type=Path, const=RECORDS, default=None)
     args = parser.parse_args(argv)
     path, records = args.path, args.records
@@ -58,6 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     reviewed = sum(question.get("human_reviewed") is True for question in questions)
     print(f"answered: {answered} of {len(questions)}")
     print(f"checked by hand against the page: {reviewed} of {len(questions)}")
+    splits = Counter(question.get("split") for question in questions)
+    if any(splits):
+        print(f"split: {splits['dev']} for development, {splits['final']} held out")
     found = problems(questions)
     if records:
         pages = {
