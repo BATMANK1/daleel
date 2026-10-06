@@ -52,3 +52,13 @@ It is downloaded, never committed:
 
 This saves a 69 MB zip to `data/external/`, verifies it against a pinned
 checksum, and checks that the whole list is sorted by frequency.
+
+## Tables typed by hand
+
+One table's text layer lists its amounts apart from their rows: the fee table
+on page 28 of the student guide. [`manual/tables.json`](manual/tables.json) holds it as typed in by hand
+from the rendered page, with the lines of the text layer it stands for.
+`daleel chunk` puts it in their place and marks its chunk
+`manually_verified`, and stops if the page no longer holds those lines, since
+the table would then describe a different page. Like the gold set's quotes,
+it holds a few lines of the document, not the document.

@@ -36,8 +36,10 @@ from daleel.chunk.chunker import (
     words,
     write_chunks,
 )
-from daleel.corpus import COMMISSION, DOCUMENTS, YANBU
+from daleel.chunk.tables import ManualTable
+from daleel.corpus import CALENDAR_DOCUMENT, COMMISSION, DOCUMENTS, YANBU
 from daleel.eval.gold import CORPUS
+from daleel.ingest.calendar import CalendarPage, CalendarRow
 
 REGS = "organizational_regulations"
 TATWEEL = chr(0x0640)
@@ -49,17 +51,23 @@ def layer(page: int, text: str, doc: str = REGS, score: float | None = 0.98765) 
     return {"doc_id": doc, "page": page, "method": "text_layer", "text": text, "gate": gate}
 
 
-def ocr(page: int, blocks: list[tuple[str, str]], doc: str = "guidance_manual") -> dict:
-    """A page read by OCR, as its layout's blocks: a category and a text each."""
+def ocr(page: int, blocks: list[tuple[str, ...]], doc: str = "guidance_manual") -> dict:
+    """A page read by OCR, as its layout's blocks: a category, a text and its HTML each."""
     layout = [
-        {"category": category, "text": text, "box": None, "html": None, "engine_order": place}
-        for place, (category, text) in enumerate(blocks, start=1)
+        {
+            "category": block[0],
+            "text": block[1],
+            "box": None,
+            "html": block[2] if len(block) > 2 else None,
+            "engine_order": place,
+        }
+        for place, block in enumerate(blocks, start=1)
     ]
     return {
         "doc_id": doc,
         "page": page,
         "method": "ocr",
-        "text": "\n\n".join(text for _, text in blocks),
+        "text": "\n\n".join(block[1] for block in blocks),
         "gate": {"verdict": "untrusted", "token_validity": None},
         "ocr": {"blocks": layout},
     }
@@ -313,6 +321,18 @@ def test_a_layout_gives_headings_list_items_and_tables() -> None:
     ]
 
 
+def test_a_table_in_the_layout_becomes_a_sentence_per_row() -> None:
+    table = (
+        "<table><thead><tr><td>الفئة</td><td>عدد الكتب</td></tr></thead>"
+        "<tbody><tr><td>الطلبة</td><td>5 كتب</td></tr><tr><td>الموظفون</td><td>3 كتب</td></tr>"
+        "</tbody></table>"
+    )
+    page = ocr(8, [("Section-header", "مدة الاعارة"), ("Table", "الفئة عدد الكتب", table)])
+    (unit,) = document_units([page])
+    assert (unit.heading, unit.content_type) == ("مدة الاعارة", TABLE)
+    assert unit.lines == ["الفئة: الطلبة، عدد الكتب: 5 كتب", "الفئة: الموظفون، عدد الكتب: 3 كتب"]
+
+
 def test_a_block_called_a_heading_but_long_is_text() -> None:
     units = document_units([ocr(2, [("Section-header", sentence(20))])])
     assert [unit.text for unit in units] == [sentence(20)]
@@ -398,15 +418,127 @@ def test_a_piece_ends_at_a_sentence_where_one_falls_late_enough() -> None:
     assert windows(400, ends)[0] == (0, MAX_WORDS)
 
 
-def test_tables_are_never_split() -> None:
-    table = unit(sentence(MAX_WORDS * 2), kind=TABLE)
-    assert pieces(table) == [table]
+def test_a_long_table_is_cut_between_its_rows() -> None:
+    rows = [sentence(70) for _ in range(5)]
+    table = Unit(1, "h", TABLE, rows, manual=True)
+    parts = pieces(table)
+    assert [part.lines for part in parts] == [rows[:2], rows[2:4], rows[4:]]
+    assert all(part.manual and part.content_type == TABLE for part in parts)
+    short = Unit(1, "h", TABLE, rows[:2])
+    assert pieces(short) == [short]
+
+
+# --- tables typed by hand and the calendar --------------------------------------
+
+GUIDE = "student_guide_2025"
+
+
+def fee_table(*replaces: str) -> ManualTable:
+    return ManualTable(
+        GUIDE,
+        28,
+        "تستوفى الرسوم حسب الآتي:",
+        ("الفئة", "المبلغ"),
+        (("الطالب السعودي", "250"), ("مقيم", "1100")),
+        replaces,
+        "by hand",
+    )
+
+
+def test_a_table_typed_by_hand_takes_the_place_of_its_scattered_lines() -> None:
+    text = "\n".join(
+        [
+            ".4 يجب سداد الرسوم كاملة",
+            "-1 تستوفى الرسوم حسب الآتي:",
+            "الطالب السعودي",
+            "250",
+            "المواظبة",
+            "مقيم",
+            "1100",
+            "وتبقى هذه الفقرة بعد الجدول كما هي",
+        ]
+    )
+    lines = ["-1 تستوفى الرسوم حسب الآتي:", "الطالب السعودي", "250", "المواظبة", "مقيم", "1100"]
+    pages = [layer(3, "\n".join(["الفهرس", "المواظبة"]), GUIDE), layer(28, text, GUIDE)]
+    chunks = document_chunks(pages, [fee_table(*lines)])
+    assert [(chunk["content_type"], chunk["manually_verified"]) for chunk in chunks] == [
+        (CLAUSE, False),
+        (TABLE, True),
+        (PROSE, False),
+    ]
+    assert chunks[1]["text"] == "\n".join(
+        [
+            "تستوفى الرسوم حسب الآتي، الفئة: الطالب السعودي، المبلغ: 250",
+            "تستوفى الرسوم حسب الآتي، الفئة: مقيم، المبلغ: 1100",
+        ]
+    )
+    # A scattered cell that is also one of the guide's sections, as برنامج
+    # الدراسة بمقابل مالي is, starts no section: the table holds it.
+    assert {chunk["section_heading"] for chunk in chunks} == {None}
+
+
+def test_a_table_typed_by_hand_must_still_match_its_page() -> None:
+    page = layer(28, "\n".join(["الطالب السعودي", "250"]), GUIDE)
+    with pytest.raises(ValueError, match="page 28 no longer holds the lines"):
+        document_chunks([page], [fee_table("الطالب السعودي", "250", "مقيم")])
+
+
+def test_tables_typed_by_hand_apply_to_their_own_document_and_page() -> None:
+    table = fee_table("250")
+    assert [chunk["text"] for chunk in document_chunks([layer(28, "250 ريال لكل وحدة")], [table])]
+    page = layer(27, "250 ريال لكل وحدة", GUIDE)
+    assert document_chunks([page], [table])[0]["manually_verified"] is False
+
+
+def calendar_page() -> CalendarPage:
+    meem, heh = chr(0x0645), chr(0x0647)
+    start = CalendarRow(
+        "بداية الفصل الدراسي الأول",
+        "Start of First Semester",
+        "الأحد",
+        "Sun",
+        "2026/08/23" + meem,
+        "1448/03/10" + heh,
+    )
+    drop = CalendarRow(
+        "نهاية فترة حذف وإضافة المقررات",
+        "Last day for add / drop courses",
+        "الخميس",
+        "Thu",
+        "2026/08/27" + meem,
+        "1448/03/14" + heh,
+    )
+    return CalendarPage(1, "الفصل الدراسي الأول (481)", "First Semester (481)", (start, drop))
+
+
+def test_each_calendar_card_is_a_chunk_under_its_semester() -> None:
+    record = layer(1, "نص الصفحة كما استخرج", CALENDAR_DOCUMENT, score=1.0)
+    chunks = document_chunks([record], calendar=[calendar_page()])
+    assert [chunk["chunk_id"] for chunk in chunks] == [
+        "academic_weeks_1448_p1_c1",
+        "academic_weeks_1448_p1_c2",
+    ]
+    assert {chunk["section_heading"] for chunk in chunks} == {"الفصل الدراسي الأول (481)"}
+    assert {chunk["content_type"] for chunk in chunks} == {TABLE}
+    assert "نهاية فترة حذف وإضافة المقررات" in chunks[1]["text"]
+    assert "2026/08/27" in chunks[1]["text"]
+    assert chunks[1]["extraction_method"] == "text_layer"
+
+
+def test_the_cards_go_to_the_calendar_alone(tmp_path: Path) -> None:
+    folder = tmp_path / "records"
+    folder.mkdir()
+    for doc in (CALENDAR_DOCUMENT, "student_charter"):
+        record = layer(1, "نص من صفحة الوثيقة الأولى", doc)
+        (folder / f"{doc}.jsonl").write_text(json.dumps(record, ensure_ascii=False) + "\n")
+    chunks = corpus_chunks(folder, calendar=[calendar_page()])
+    assert [chunk["doc_id"] for chunk in chunks] == [CALENDAR_DOCUMENT] * 2 + ["student_charter"]
 
 
 # --- chunks --------------------------------------------------------------------
 
 
-def test_chunks_carry_the_spec_s_metadata() -> None:
+def test_chunks_carry_what_a_citation_needs() -> None:
     text = "المادة الثانية والعشرون:\n.1 " + sentence(50) + "\n.2 " + sentence(50)
     chunks = document_chunks([layer(12, text)])
     assert [chunk["chunk_id"] for chunk in chunks] == [
@@ -426,6 +558,7 @@ def test_chunks_carry_the_spec_s_metadata() -> None:
         "content_type": CLAUSE,
         "extraction_method": "text_layer",
         "gate_score": 0.988,
+        "manually_verified": False,
         "text": ".1 " + sentence(50),
     }
 

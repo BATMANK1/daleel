@@ -289,16 +289,26 @@ not taken as a heading. This finds 71 of the regulations' 72 articles and all
 37 of the conduct code's. The one it misses, article 1, has no label in the
 extracted text.
 
+A table becomes one sentence per row, with each value named by its column, so
+a retrieved row can be cited on its own: `الفئة: الطلبة، عدد الكتب: 5 كتب، مدة
+الاعارة: 14 يوم`. Tables come from three places. An OCR page's layout gives
+its tables as HTML, and a merged cell is repeated in every row it covers. The
+academic calendar's 37 cards become a chunk each, rebuilt as
+[Calendar](#calendar) describes and named with their semester, so `daleel
+chunk` reads the calendar's PDF as well as the records. And one table's text
+layer lists its amounts apart from their rows: the fee table on page 28 of
+the student guide. It was typed in by hand from the rendered page, and is in
+[`data/manual/tables.json`](data/manual/tables.json) with the lines of the
+text layer it replaces. Its chunk is marked `manually_verified`.
+
 ```bash
 daleel chunk    # data/interim/extracted/ to data/processed/chunks.jsonl
 ```
 
-The 257 pages give 735 chunks. Every chunk carries what a citation needs: the
+The 257 pages give 768 chunks. Every chunk carries what a citation needs: the
 document's title, scope and date, the chunk's page, heading and clause number,
 whether it is a clause, prose or a table, and how its page was extracted, so a
-wrong answer can be traced back to its page. Two kinds of content wait for rows of their own: the
-calendar's cards, which come in whole-page windows here, and tables whose text
-layer scatters their cells, such as the student guide's fee table.
+wrong answer can be traced back to its page.
 
 ## Usage
 

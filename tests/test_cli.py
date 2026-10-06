@@ -563,3 +563,69 @@ def test_chunk_writes_every_document_s_chunks_and_counts_them(
         "median_words": 6,
         "max_words": 8,
     }
+
+
+def test_chunk_wants_the_tables_typed_by_hand(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_records(tmp_path / "records", "student_charter", ["حقوق الطالب وواجباته"])
+    arguments = ["chunk", "--records", str(tmp_path / "records"), "--out", str(tmp_path / "c")]
+    assert main([*arguments, "--manual", str(tmp_path / "absent.json")]) == 2
+    assert "no tables typed by hand" in capsys.readouterr().err
+
+
+def test_chunk_reads_the_calendar_from_its_text_without_its_pdf(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_records(tmp_path / "records", "academic_weeks_1448", ["بداية الفصل الدراسي الأول"])
+    out = tmp_path / "chunks.jsonl"
+    arguments = ["chunk", "--records", str(tmp_path / "records"), "--out", str(out)]
+    assert main([*arguments, "--raw", str(tmp_path / "raw")]) == 0
+    assert "the calendar is chunked from its text" in capsys.readouterr().err
+    assert "بداية الفصل الدراسي الأول" in out.read_text(encoding="utf-8")
+
+
+def test_chunk_needs_the_lexicon_to_read_the_calendar_s_cards(
+    make_pdf: Callable[..., Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pdf = make_pdf(["a calendar"], name="academic_weeks_1448.pdf")
+    _write_records(tmp_path / "records", "academic_weeks_1448", ["بداية الفصل الدراسي الأول"])
+    arguments = [
+        "chunk",
+        "--records",
+        str(tmp_path / "records"),
+        "--raw",
+        str(pdf.parent),
+        "--lexicon",
+        str(tmp_path / "absent.zip"),
+    ]
+    assert main(arguments) == 2
+    assert "fetch_lexicon.py" in capsys.readouterr().err
+
+
+def test_chunk_makes_a_chunk_of_each_calendar_card(
+    make_pdf: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("daleel.cli.read_calendar", lambda path, lexicon: [_calendar_page()])
+    pdf = make_pdf(["a calendar"], name="academic_weeks_1448.pdf")
+    _write_records(tmp_path / "records", "academic_weeks_1448", ["نص الصفحة الأولى من التقويم"])
+    out = tmp_path / "chunks.jsonl"
+    arguments = [
+        "chunk",
+        "--records",
+        str(tmp_path / "records"),
+        "--out",
+        str(out),
+        "--raw",
+        str(pdf.parent),
+        "--lexicon",
+        str(_lexicon(tmp_path)),
+    ]
+    assert main(arguments) == 0
+    chunks = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert [chunk["section_heading"] for chunk in chunks] == ["الفصل الدراسي الأول (481)"] * 2
+    assert "Final Exams" in chunks[1]["text"]
+    assert "2 chunks written to" in capsys.readouterr().out

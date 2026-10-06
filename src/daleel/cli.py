@@ -12,6 +12,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from daleel.chunk.chunker import CHUNKS, CLAUSE, TABLE, document_chunks, words, write_chunks
+from daleel.chunk.tables import MANUAL_TABLES, load_manual_tables
+from daleel.corpus import CALENDAR_DOCUMENT
 from daleel.ingest.calendar import CALENDAR, CalendarPage, read_calendar, write_csv
 from daleel.ingest.extract import BACKENDS, UnsupportedPdfiumError
 from daleel.ingest.gate import (
@@ -589,9 +591,12 @@ def _add_chunk_parser(subparsers: argparse._SubParsersAction) -> None:
         description=(
             "Cut the extracted records into chunks along the documents' own structure: "
             "headings, articles and numbered clauses, merging what is too short to stand "
-            "alone and splitting what is too long. Every chunk carries its document's "
-            "title, scope and date, its page, heading and clause number, and how its page "
-            "was extracted. The chunks of every document are written to OUT, one per line."
+            "alone and splitting what is too long. Tables become a sentence per row: from "
+            "the OCR layout, from the academic calendar's cards, which are read from its "
+            "PDF, and from the tables typed in by hand in MANUAL. Every chunk carries its "
+            "document's title, scope and date, its page, heading and clause number, and "
+            "how its page was extracted. The chunks of every document are written to OUT, "
+            "one per line."
         ),
     )
     parser.add_argument(
@@ -603,7 +608,48 @@ def _add_chunk_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument(
         "--out", type=Path, default=CHUNKS, help="file for the chunks (default: %(default)s)"
     )
+    parser.add_argument(
+        "--raw",
+        type=Path,
+        default=Path("data/raw"),
+        help="folder of the PDFs, for the academic calendar's cards (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--manual",
+        type=Path,
+        default=MANUAL_TABLES,
+        help="tables typed in by hand (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--lexicon",
+        type=Path,
+        default=LEXICON_ZIP,
+        help="frequency-list zip, for the calendar's cards (default: %(default)s)",
+    )
     parser.add_argument("--json", action="store_true", help="emit the summary as JSON")
+
+
+def _calendar_pages(args: argparse.Namespace) -> tuple[list[CalendarPage] | None, int | None]:
+    """The academic calendar's cards, None where its PDF is absent, or an exit code."""
+    pdf = args.raw / f"{CALENDAR_DOCUMENT}.pdf"
+    if not pdf.is_file():
+        print(
+            f"warning: no {pdf}, so the calendar is chunked from its text, not by its cards",
+            file=sys.stderr,
+        )
+        return None, None
+    if not args.lexicon.is_file():
+        print(
+            f"error: no lexicon at {args.lexicon}, which the calendar's cards need. "
+            "Fetch it with: python3 scripts/fetch_lexicon.py",
+            file=sys.stderr,
+        )
+        return None, 2
+    try:
+        return read_calendar(pdf, load_gate_lexicon(args.lexicon)), None
+    except ValueError as error:
+        print(f"error: {pdf}, {error}", file=sys.stderr)
+        return None, 1
 
 
 def _run_chunk(args: argparse.Namespace) -> int:
@@ -618,11 +664,26 @@ def _run_chunk(args: argparse.Namespace) -> int:
         )
         return 1
 
+    if not args.manual.is_file():
+        print(f"error: no tables typed by hand at {args.manual}", file=sys.stderr)
+        return 2
+    try:
+        manual = load_manual_tables(args.manual)
+    except (ValueError, KeyError) as exc:
+        print(f"error: {args.manual}: {exc}", file=sys.stderr)
+        return 1
+    calendar, status = None, None
+    if any(path.stem == CALENDAR_DOCUMENT for path in files):
+        calendar, status = _calendar_pages(args)
+        if status is not None:
+            return status
+
     chunks, summaries = [], []
     for path in files:
         records = sorted(read_records(path), key=lambda record: record["page"])
+        cards = calendar if path.stem == CALENDAR_DOCUMENT else None
         try:
-            found = document_chunks(records)
+            found = document_chunks(records, manual, cards)
         except ValueError as exc:
             print(f"error: {path}: {exc}", file=sys.stderr)
             return 1

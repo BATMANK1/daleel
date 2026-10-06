@@ -7,7 +7,8 @@ Headings come from an OCR page's layout, from articles' labels, from numbered
 parts such as أولاً:, and from the student guide's table of contents. A heading
 is a chunk's section_heading, not part of its text. Units start at numbered
 clauses, bullets and layout blocks, and are merged when too short and split
-when too long, but never across a page, since a chunk cites one page.
+when too long, but never across a page, since a chunk cites one page. Tables
+become a sentence per row (daleel.chunk.tables).
 
 Two habits of the text layers shape the rules. The regulations and the
 conduct code print an article's label in the margin, which their text layers
@@ -32,7 +33,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from daleel.corpus import DOCUMENTS
+from daleel.chunk.tables import ManualTable, calendar_sentence, table_sentences
+from daleel.corpus import CALENDAR_DOCUMENT, DOCUMENTS
+from daleel.ingest.calendar import CalendarPage
 from daleel.ingest.records import read_records
 from daleel.normalize.arabic import for_comparison
 
@@ -138,7 +141,10 @@ class Line:
     clause_no: str | None = None
     # It is part of a clause: numbered, bulleted, or a list item of the layout.
     clause: bool = False
+    # A table, its rows a line each.
     table: bool = False
+    # A table typed in by hand from the rendered page.
+    manual: bool = False
     # A line of numbers: it ends the unit before it and holds nothing.
     stop: bool = False
 
@@ -165,6 +171,7 @@ class Unit:
     content_type: str
     lines: list[str] = field(default_factory=list)
     clause_no: str | None = None
+    manual: bool = False
 
     @property
     def text(self) -> str:
@@ -180,6 +187,7 @@ class Draft:
     content_type: str
     texts: list[str]
     clause_nos: list[str | None]
+    manual: bool = False
 
     @property
     def words(self) -> int:
@@ -283,6 +291,19 @@ class PageReader:
         self.boilerplate = boilerplate
         self.contents = contents
         self.article = 0
+        # The current page's tables typed in by hand, by each line they stand
+        # for, and the lines found so far.
+        self.replaced: dict[str, ManualTable] = {}
+        self.found: set[str] = set()
+
+    def replace(self, tables: Sequence[ManualTable]) -> None:
+        """Read the next page with these tables in place of the lines they stand for."""
+        self.replaced = {for_comparison(line): table for table in tables for line in table.replaces}
+        self.found = set()
+
+    def missing(self) -> list[str]:
+        """The lines a table stands for that the page just read did not hold."""
+        return sorted(set(self.replaced) - self.found)
 
     def _label(self, text: str) -> Label | None:
         found = article_label(text)
@@ -300,6 +321,14 @@ class PageReader:
         if not _HAS_WORD.search(text):
             return []
         probe = for_comparison(text)
+        table = self.replaced.get(probe)
+        if table is not None:
+            # The table goes where the first of its lines was.
+            placed = any(self.replaced[line] is table for line in self.found)
+            self.found.add(probe)
+            if placed:
+                return []
+            return [Line("\n".join(table.sentences()), table=True, manual=True)]
         if probe in self.boilerplate:
             return []
         if _NUMBERS.fullmatch(probe):
@@ -320,7 +349,9 @@ class PageReader:
         if category in LEFT_OUT_BLOCKS or not _HAS_WORD.search(text):
             return
         if category in TABLE_BLOCKS:
-            rows = [" ".join(row.split()) for row in text.split("\n")]
+            rows = table_sentences(block.get("html") or "")
+            if not rows:
+                rows = [" ".join(row.split()) for row in text.split("\n")]
             yield Line("\n".join(row for row in rows if row), table=True)
             return
         if category in HEADING_BLOCKS and words(text) <= HEADING_WORDS:
@@ -399,8 +430,15 @@ def _heading(text: str) -> str:
     return text.strip(" :-")
 
 
-def document_units(records: Sequence[Mapping[str, Any]]) -> list[Unit]:
-    """A document's units in reading order, each under the heading before it."""
+def document_units(
+    records: Sequence[Mapping[str, Any]], manual: Sequence[ManualTable] = ()
+) -> list[Unit]:
+    """A document's units in reading order, each under the heading before it.
+
+    A table typed in by hand takes the place of the lines it stands for, and
+    a page that no longer holds all of them is an error: its text has changed
+    since the table was typed.
+    """
     doc_id = records[0]["doc_id"]
     boilerplate = boilerplate_lines(records)
     contents = DOCUMENTS[doc_id].contents_page
@@ -411,13 +449,15 @@ def document_units(records: Sequence[Mapping[str, Any]]) -> list[Unit]:
         page, current = record["page"], None
         if page == contents:
             continue
+        reader.replace([table for table in manual if table.page == page])
         for line in reader.page(record):
             if line.heading or line.stop or line.table:
                 current = None
                 if line.heading:
                     heading = _heading(line.text)
                 elif line.table:
-                    units.append(Unit(page, heading, TABLE, [line.text]))
+                    rows = line.text.split("\n")
+                    units.append(Unit(page, heading, TABLE, rows, manual=line.manual))
                 continue
             if current is None or line.starts:
                 article = heading is not None and for_comparison(heading).startswith(_ARTICLE)
@@ -425,7 +465,22 @@ def document_units(records: Sequence[Mapping[str, Any]]) -> list[Unit]:
                 current = Unit(page, heading, kind, [], line.clause_no)
                 units.append(current)
             current.lines.append(line.text)
+        missing = reader.missing()
+        if missing:
+            raise ValueError(
+                f"{doc_id} page {page} no longer holds the lines its table typed by hand "
+                f"stands for: {', '.join(missing)}"
+            )
     return units
+
+
+def calendar_units(pages: Sequence[CalendarPage]) -> list[Unit]:
+    """The academic calendar's cards, a unit each, under their semester."""
+    return [
+        Unit(page.page, page.semester_ar or None, TABLE, [calendar_sentence(page.semester_ar, row)])
+        for page in pages
+        for row in page.rows
+    ]
 
 
 def windows(count: int, ends: Sequence[bool]) -> list[tuple[int, int]]:
@@ -449,9 +504,23 @@ def windows(count: int, ends: Sequence[bool]) -> list[tuple[int, int]]:
 
 
 def pieces(unit: Unit) -> list[Unit]:
-    """A unit, or the overlapping pieces of one longer than MAX_WORDS."""
-    if unit.content_type == TABLE or words(unit.text) <= MAX_WORDS:
+    """A unit, or the pieces of one longer than MAX_WORDS.
+
+    A table is cut between its rows, which stand alone, and a piece of text
+    overlaps the piece before it.
+    """
+    if words(unit.text) <= MAX_WORDS:
         return [unit]
+    if unit.content_type == TABLE:
+        groups: list[list[str]] = [[]]
+        for row in unit.lines:
+            if groups[-1] and words("\n".join([*groups[-1], row])) > MAX_WORDS:
+                groups.append([])
+            groups[-1].append(row)
+        return [
+            Unit(unit.page, unit.heading, TABLE, rows, unit.clause_no, unit.manual)
+            for rows in groups
+        ]
     tokens = unit.text.split()
     ends = [token[-1] in SENTENCE_ENDS for token in tokens]
     return [
@@ -488,20 +557,28 @@ def merge(units: Sequence[Unit]) -> list[Draft]:
             if unit.content_type == CLAUSE:
                 draft.content_type = CLAUSE
         else:
-            drafts.append(
-                Draft(unit.page, unit.heading, unit.content_type, [unit.text], [unit.clause_no])
-            )
+            draft = Draft(unit.page, unit.heading, unit.content_type, [unit.text], [unit.clause_no])
+            draft.manual = unit.manual
+            drafts.append(draft)
     return drafts
 
 
-def document_chunks(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def document_chunks(
+    records: Sequence[Mapping[str, Any]],
+    manual: Sequence[ManualTable] = (),
+    calendar: Sequence[CalendarPage] | None = None,
+) -> list[dict[str, Any]]:
     """A document's chunks, from its records in page order, with their metadata.
 
     That is what a citation needs: the document's title, scope and date
     (daleel.corpus), the chunk's page, heading and clause number, whether it is
     a clause, prose or a table, and how its page was extracted, with the gate's
     score for the page's text layer, the share of its Arabic words the word
-    list knows, so a wrong answer can be traced to its page.
+    list knows, so a wrong answer can be traced to its page. A table typed in
+    by hand is marked as manually verified.
+
+    `manual` holds the tables typed in by hand, for any document. The academic
+    calendar's chunks are its cards, given as `calendar`, where they are.
     """
     if not records:
         return []
@@ -510,7 +587,11 @@ def document_chunks(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]
         raise ValueError(f"{doc_id} is not a document of the corpus")
     document = DOCUMENTS[doc_id]
     pages = {record["page"]: record for record in records}
-    units = [piece for unit in document_units(records) for piece in pieces(unit)]
+    if calendar is not None:
+        found = calendar_units(calendar)
+    else:
+        found = document_units(records, [table for table in manual if table.doc_id == doc_id])
+    units = [piece for unit in found for piece in pieces(unit)]
     chunks: list[dict[str, Any]] = []
     counts: Counter[int] = Counter()
     for draft in merge(units):
@@ -532,18 +613,24 @@ def document_chunks(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]
                 "content_type": draft.content_type,
                 "extraction_method": record["method"],
                 "gate_score": None if score is None else round(score, 3),
+                "manually_verified": draft.manual,
                 "text": "\n".join(draft.texts),
             }
         )
     return chunks
 
 
-def corpus_chunks(folder: Path) -> list[dict[str, Any]]:
+def corpus_chunks(
+    folder: Path,
+    manual: Sequence[ManualTable] = (),
+    calendar: Sequence[CalendarPage] | None = None,
+) -> list[dict[str, Any]]:
     """The chunks of every document whose records are in `folder`, document by document."""
     chunks = []
     for path in sorted(folder.glob("*.jsonl")):
         records = sorted(read_records(path), key=lambda record: record["page"])
-        chunks += document_chunks(records)
+        cards = calendar if path.stem == CALENDAR_DOCUMENT else None
+        chunks += document_chunks(records, manual, cards)
     return chunks
 
 
