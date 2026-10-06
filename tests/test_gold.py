@@ -279,7 +279,7 @@ def test_a_page_without_text_is_reported() -> None:
 def test_repeated_ids_and_a_wrong_composition_are_reported() -> None:
     found = problems([question(), question()])
     assert "repeated ids: g001" in found
-    assert "2 single_clause questions, where the spec has 25" in found
+    assert "2 single_clause questions, not 25" in found
 
 
 def _split(qids_final: set[int], groups: dict[int, str] | None = None) -> list[dict]:

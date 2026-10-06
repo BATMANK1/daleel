@@ -6,12 +6,12 @@ eval/gold_draft.jsonl. Once every answer has been checked by hand against its
 page, it is copied to eval/gold_v1.jsonl and never changed again; a mistake
 found later goes into a gold_v2.jsonl, reported beside the first.
 
-The set follows the composition of the project spec's section 8: 80 questions
-of eight types, from single clauses and numbers to questions the corpus
-cannot answer. Each question names the pages that answer it, by the PDF's own
-page numbers from 1, and a topic group: questions that ask the same thing in
-other words, or in English, share one, and a group is never divided between
-the questions used for development and the 20 held out for the end.
+The set has a fixed composition, COMPOSITION: 80 questions of eight types,
+from single clauses and numbers to questions the corpus cannot answer. Each
+question names the pages that answer it, by the PDF's own page numbers from
+1, and a topic group: questions that ask the same thing in other words, or in
+English, share one, and a group is never divided between the questions used
+for development and the 20 held out for the end.
 
 What a correct answer does follows from whether the corpus can answer the
 question at all. Most are answered and cited. Where two documents disagree,
@@ -56,7 +56,7 @@ CORPUS = {
     "student_portal_guide": 42,
 }
 
-# The spec's composition: how many questions of each type.
+# How many questions of each type the set holds.
 COMPOSITION = {
     "single_clause": 25,
     "numeric": 15,
@@ -305,7 +305,7 @@ def problems(questions: Sequence[dict]) -> list[str]:
     counts = composition(questions)
     for kind, expected in COMPOSITION.items():
         if counts[kind] != expected:
-            found.append(f"{counts[kind]} {kind} questions, where the spec has {expected}")
+            found.append(f"{counts[kind]} {kind} questions, not {expected}")
     return found + split_problems(questions)
 
 

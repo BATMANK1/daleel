@@ -1,54 +1,23 @@
 """Chunks cut along the documents' own structure: headings, articles and clauses.
 
-A chunk cut through the middle of a clause cites nothing, so the corpus is
-split by its structure, not by a count of tokens (the spec, section 7). Each
-page's extracted text is read as lines, and each line is a heading, the start
-of a unit, or the continuation of one.
+A chunk cut through the middle of a clause cites nothing, so pages are split
+where the documents split themselves. Each page's text is read as lines, and
+each line is a heading, the start of a unit, or the continuation of one.
+Headings come from an OCR page's layout, from articles' labels, from numbered
+parts such as أولاً:, and from the student guide's table of contents. A heading
+is a chunk's section_heading, not part of its text. Units start at numbered
+clauses, bullets and layout blocks, and are merged when too short and split
+when too long, but never across a page, since a chunk cites one page.
 
-A heading is a block the layout calls a title or a section header, on a page
-read by OCR; an article's label, such as المادة الخامسة والعشرون, which the
-text layers of the regulations and the conduct code print at the end of the
-article's first line, because the margin the label sits in is read with that
-line; a numbered part, such as أولاً: شروط التحويل; or, in a document whose
-table of contents lists its sections as text, a line that is one of them. The
-table of contents itself is read for those entries and not chunked. A label
-that could be a reference to another article is taken only where its number
-follows the last article's (PageReader). A heading is not part of a chunk's
-text. It is the section_heading of every chunk after it, across pages, until
-the next one.
-
-A unit starts with a numbered clause (.1, -1, 1-, 1. or 1)), whose number is
-its clause_no, with a bullet, or with a block of the layout. Lettered items
-(أ- ب-) continue the clause they belong to. A line of nothing but numbers ends
-a unit and is left out: such lines are page numbers, or the numbers of the
-student guide's illustrated lists, printed beside their items. Whether such a
-number belongs to the text before it or after it differs between documents,
-so it is not taken as a clause number. Lines repeated on many pages of a
-document, its running headers and footers, are left out, and so are lines
-with no letter or digit, and the blocks the layout calls page headers,
-footers, pictures or formulas.
-
-A unit never crosses a page, since a chunk cites one page. A unit shorter
-than MIN_WORDS takes in the units after it under the same heading on the same
-page, and a fragment shorter than FRAGMENT_WORDS joins the unit before it,
-but no merge makes a chunk longer than MAX_WORDS. A unit longer than that is
-split, at the end of a sentence where one falls in the second half of the
-piece, and the next piece repeats the last OVERLAP words, so a sentence cut at
-the edge is whole in one of the two.
-
-A table the layout found is one unit, as the layout reads it, and is never
-merged or split. Tables whose text layer scatters their cells, such as the
-student guide's fee table, are not rebuilt here.
+Two habits of the text layers shape the rules. The regulations and the
+conduct code print an article's label in the margin, which their text layers
+read at the end of the article's first line (PageReader). The student guide
+prints the numbers of its illustrated lists beside their items, so a line of
+bare numbers ends a unit; it is not taken as a clause number, because whether
+it belongs to the text before it or after it differs between documents.
 
 Chunks keep the extracted text as it is, diacritics and tatweel included:
-normalizing it is the index's choice, and one the evaluation measures. Each
-chunk carries the metadata of the spec's section 7: its document's title,
-scope and date (daleel.corpus), its page, heading and clause number, whether
-it is a clause, prose or a table, and how its page was extracted, with the
-gate's score for the page's text layer: the share of its Arabic words the
-word list knows, or None where the layer held none. Chunks go to
-data/processed/chunks.jsonl, a line each, and stay out of git with the rest
-of data/processed/.
+normalizing it is the index's choice, and one the evaluation measures.
 """
 
 from __future__ import annotations
@@ -503,7 +472,13 @@ def _joins(draft: Draft, unit: Unit) -> bool:
 
 
 def merge(units: Sequence[Unit]) -> list[Draft]:
-    """Units merged where they are too short to stand alone."""
+    """Units merged where they are too short to stand alone.
+
+    A unit shorter than MIN_WORDS takes in the units after it under the same
+    heading on the same page, and a fragment shorter than FRAGMENT_WORDS joins
+    the unit before it. No merge makes a chunk longer than MAX_WORDS, and
+    tables are never merged.
+    """
     drafts: list[Draft] = []
     for unit in units:
         if drafts and _joins(drafts[-1], unit):
@@ -520,7 +495,14 @@ def merge(units: Sequence[Unit]) -> list[Draft]:
 
 
 def document_chunks(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """A document's chunks, from its records in page order, with their metadata."""
+    """A document's chunks, from its records in page order, with their metadata.
+
+    That is what a citation needs: the document's title, scope and date
+    (daleel.corpus), the chunk's page, heading and clause number, whether it is
+    a clause, prose or a table, and how its page was extracted, with the gate's
+    score for the page's text layer, the share of its Arabic words the word
+    list knows, so a wrong answer can be traced to its page.
+    """
     if not records:
         return []
     doc_id = records[0]["doc_id"]
