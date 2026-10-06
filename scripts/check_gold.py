@@ -4,9 +4,9 @@
     python3 scripts/check_gold.py [path] [--records DIR]
 
 The path defaults to eval/gold_draft.jsonl. Prints how many questions there
-are of each type against the spec, how many a correct answer should answer,
-refuse or qualify, how many are answered and how many checked by hand, and
-every problem found, then exits with 1 if there is any.
+are of each type against the set's composition, how many a correct answer
+should answer, refuse or qualify, how many are answered and how many checked
+by hand, and every problem found, then exits with 1 if there is any.
 
 With --records, the extracted records (data/interim/extracted/ by default
 when the option is given without a folder) are read too, and every quote must
@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     counts = composition(questions)
     print(f"questions: {len(questions)}")
     for kind, expected in COMPOSITION.items():
-        print(f"  {kind:15s} {counts[kind]:3d} (spec {expected})")
+        print(f"  {kind:15s} {counts[kind]:3d} (of {expected})")
     print("what a correct answer does:")
     for name, count in sorted(Counter(behavior(q) for q in questions if _known(q)).items()):
         print(f"  {name:25s} {count:3d}")

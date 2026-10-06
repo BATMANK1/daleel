@@ -293,10 +293,10 @@ extracted text.
 daleel chunk    # data/interim/extracted/ to data/processed/chunks.jsonl
 ```
 
-The 257 pages give 735 chunks. Every chunk carries the metadata from the
-spec's section 7: the document's title, scope and date, the chunk's page,
-heading and clause number, whether it is a clause, prose or a table, and how
-its page was extracted. Two kinds of content wait for rows of their own: the
+The 257 pages give 735 chunks. Every chunk carries what a citation needs: the
+document's title, scope and date, the chunk's page, heading and clause number,
+whether it is a clause, prose or a table, and how its page was extracted, so a
+wrong answer can be traced back to its page. Two kinds of content wait for rows of their own: the
 calendar's cards, which come in whole-page windows here, and tables whose text
 layer scatters their cells, such as the student guide's fee table.
 
