@@ -310,6 +310,23 @@ document's title, scope and date, the chunk's page, heading and clause number,
 whether it is a clause, prose or a table, and how its page was extracted, so a
 wrong answer can be traced back to its page.
 
+## Retrieval
+
+The gold set names pages and quotes, not chunks, so the evidence a question
+needs is found anew for every way of chunking: a chunk holds a quote when the
+quote, normalized, is in its text, and a quote given as a group of parts
+holds only where all of them are in one chunk. A question needs every quote
+on every page that answers it. `scripts/eval_retrieval.py` searches the
+chunks for each of the 72 questions the corpus answers and reports recall
+and completeness at 1, 5, 10 and 20, and MRR@10, overall, by question type
+and by language.
+
+The first retriever is BM25 with Lucene's parameters over an Arabic
+analyzer: normalization for comparison, stopwords (with the colloquial
+question words of Saudi Arabic), and Lucene's light stemmer. Each step can
+be turned off, to measure what it buys. Its numbers are published here once
+the gold set is frozen.
+
 ## Usage
 
 ```bash
@@ -328,6 +345,7 @@ sha256sum -c data/SHA256SUMS                      # check your copies of the doc
 python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made of
 python3 scripts/check_calendar_csv.py <csv> <ics> # check a page of calendar rows
 python3 scripts/check_gold.py --records           # check the gold set, its quotes against the pages
+python3 scripts/eval_retrieval.py --misses        # BM25 measured against the gold set's evidence
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
