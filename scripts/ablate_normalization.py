@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 from daleel.chunk.chunker import CHUNKS, document_chunks, read_chunks
-from daleel.eval.gold import CORPUS, GOLD_DRAFT, SPLITS, load_gold
+from daleel.eval.gold import CORPUS, GOLD_V1, SPLITS, load_gold
 from daleel.eval.retrieval import evaluate, summary
 from daleel.retrieve.analyzer import Analyzer
 from daleel.retrieve.bm25 import ChunkIndex
@@ -89,7 +89,7 @@ def poppler_version() -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Table T3, the normalization ablation.")
-    parser.add_argument("--gold", type=Path, default=GOLD_DRAFT)
+    parser.add_argument("--gold", type=Path, default=GOLD_V1)
     parser.add_argument("--split", choices=SPLITS, help="only the questions of this split")
     parser.add_argument("--chunks", type=Path, default=CHUNKS)
     parser.add_argument("--raw", type=Path, default=RAW)

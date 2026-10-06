@@ -310,6 +310,24 @@ document's title, scope and date, the chunk's page, heading and clause number,
 whether it is a clause, prose or a table, and how its page was extracted, so a
 wrong answer can be traced back to its page.
 
+## Gold set
+
+[`eval/gold_v1.jsonl`](eval/gold_v1.jsonl) holds the 80 questions that
+retrieval and answers are measured on: 28 asked by classmates, one by the
+author, 47 written to cover the corpus, and 4 English translations. They
+come in eight types, from single clauses and numbers to questions the corpus
+cannot answer. Each question names the pages that answer it and quotes the
+words on them that hold the answer. Every answer was drafted from the
+extracted text, then checked by hand against its PDF page. The review changed
+six of them, and the set was frozen on 6 October 2026. A mistake found later
+will go into a gold_v2, reported beside it.
+
+Twenty questions are held out for the final comparison and not looked at
+during development. They are chosen in whole topic groups, so no paraphrase
+of a held-out question is among the other 60, and each type is held out in
+its share of the set (`choose_final` in `daleel.eval.gold`, seed 1448). Of the
+72 questions the corpus answers, 54 are for development and 18 are held out.
+
 ## Retrieval
 
 The gold set names pages and quotes, not chunks, so the evidence a question

@@ -24,7 +24,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from daleel.chunk.chunker import CHUNKS, read_chunks
-from daleel.eval.gold import GOLD_DRAFT, SPLITS, load_gold
+from daleel.eval.gold import GOLD_V1, SPLITS, load_gold
 from daleel.eval.retrieval import evaluate, summary
 from daleel.retrieve.analyzer import Analyzer
 from daleel.retrieve.bm25 import TEXT_ONLY, WITH_HEADING, ChunkIndex
@@ -40,11 +40,9 @@ def _row(name: str, measures: dict[str, float]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Measure BM25 against the gold set.")
-    parser.add_argument("--gold", type=Path, default=GOLD_DRAFT)
+    parser.add_argument("--gold", type=Path, default=GOLD_V1)
     parser.add_argument("--chunks", type=Path, default=CHUNKS)
-    parser.add_argument(
-        "--split", choices=SPLITS, help="only the questions of this split, once there is one"
-    )
+    parser.add_argument("--split", choices=SPLITS, help="only the questions of this split")
     parser.add_argument("--no-normalize", action="store_true", help="index the text as extracted")
     parser.add_argument("--no-stopwords", action="store_true", help="keep stopwords")
     parser.add_argument("--no-stem", action="store_true", help="do not stem")
