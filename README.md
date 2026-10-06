@@ -324,8 +324,10 @@ and by language.
 The first retriever is BM25 with Lucene's parameters over an Arabic
 analyzer: normalization for comparison, stopwords (with the colloquial
 question words of Saudi Arabic), and Lucene's light stemmer. Each step can
-be turned off, to measure what it buys. Its numbers are published here once
-the gold set is frozen.
+be turned off, to measure what it buys: `scripts/ablate_normalization.py`
+adds them one at a time, and sets the pipeline's chunks beside a naive
+pipeline's, poppler's `pdftotext` read word for word, chunked the same way
+(table T3). Its numbers are published here once the gold set is frozen.
 
 ## Usage
 
@@ -346,6 +348,7 @@ python3 scripts/inspect_pages.py <pdf> <pages>    # what chosen pages are made o
 python3 scripts/check_calendar_csv.py <csv> <ics> # check a page of calendar rows
 python3 scripts/check_gold.py --records           # check the gold set, its quotes against the pages
 python3 scripts/eval_retrieval.py --misses        # BM25 measured against the gold set's evidence
+python3 scripts/ablate_normalization.py           # table T3: what extraction and each analyzer step buy
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite

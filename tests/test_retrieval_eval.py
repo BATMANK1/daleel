@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from daleel.eval.retrieval import Ranked, evaluate, evidence, rank_evidence, summary
+from daleel.eval.retrieval import Ranked, by_page, evaluate, evidence, rank_evidence, summary
 
 GUIDE, CHARTER = "student_guide_2025", "student_charter"
 
@@ -54,6 +54,11 @@ def test_a_quote_is_found_after_normalization() -> None:
     assert found == [frozenset({"ch4a"})]
 
 
+def test_chunks_arranged_by_page_once_give_the_same_evidence() -> None:
+    q = question("g1", [ref(GUIDE, 30, ["نسبة الغياب"]), ref(CHARTER, 4, ["خصوصية"])])
+    assert evidence(q, by_page(CHUNKS)) == evidence(q, CHUNKS)
+
+
 def test_only_the_pages_that_answer_count() -> None:
     refs = [ref(GUIDE, 31, ["نسبة الغياب"], role="related_only"), ref(CHARTER, 4, ["خصوصية"])]
     assert evidence(question("g1", refs), CHUNKS) == [frozenset({"ch4a"})]
@@ -100,6 +105,7 @@ def test_the_summary_averages_over_questions() -> None:
     found = summary(results, (5, 10))
     assert found == {
         "questions": 2,
+        "held": pytest.approx(2 / 3),
         "recall@5": 0.25,
         "recall@10": 0.5,
         "complete@5": 0,
