@@ -4,10 +4,11 @@
     python3 scripts/eval_retrieval.py [--gold PATH] [--chunks PATH] [options]
 
 Searches the chunks (data/processed/chunks.jsonl, written by daleel chunk)
-for every answerable question of the gold set, and prints recall and
-completeness at 1, 5, 10 and 20 and MRR@10, overall, by question type and by
-language. --misses lists each question whose evidence is not all in the first
-five, with the rank of each of its quotes.
+for every answerable question of the gold set, or of one split of it, and
+prints the share of the evidence some chunk holds, recall and completeness at
+5 and 10, and MRR@10, overall, by question type and by language. --misses
+lists each question whose evidence is not all in the first five, with the
+rank of each of its quotes.
 
 The analyzer's steps can be turned off one at a time, and each chunk's heading
 indexed with its text, to measure what each contributes. The measures
@@ -23,12 +24,12 @@ from collections import defaultdict
 from pathlib import Path
 
 from daleel.chunk.chunker import CHUNKS, read_chunks
-from daleel.eval.gold import GOLD_DRAFT, load_gold
+from daleel.eval.gold import GOLD_DRAFT, SPLITS, load_gold
 from daleel.eval.retrieval import evaluate, summary
 from daleel.retrieve.analyzer import Analyzer
 from daleel.retrieve.bm25 import TEXT_ONLY, WITH_HEADING, ChunkIndex
 
-COLUMNS = ("questions", "recall@5", "recall@10", "complete@5", "complete@10", "mrr@10")
+COLUMNS = ("questions", "held", "recall@5", "recall@10", "complete@5", "complete@10", "mrr@10")
 
 
 def _row(name: str, measures: dict[str, float]) -> str:
@@ -41,6 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Measure BM25 against the gold set.")
     parser.add_argument("--gold", type=Path, default=GOLD_DRAFT)
     parser.add_argument("--chunks", type=Path, default=CHUNKS)
+    parser.add_argument(
+        "--split", choices=SPLITS, help="only the questions of this split, once there is one"
+    )
     parser.add_argument("--no-normalize", action="store_true", help="index the text as extracted")
     parser.add_argument("--no-stopwords", action="store_true", help="keep stopwords")
     parser.add_argument("--no-stem", action="store_true", help="do not stem")
@@ -53,7 +57,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {path} does not exist", file=sys.stderr)
             return 2
 
-    questions = load_gold(args.gold)
+    questions = [
+        question
+        for question in load_gold(args.gold)
+        if args.split is None or question.get("split") == args.split
+    ]
     chunks = read_chunks(args.chunks)
     analyzer = Analyzer(
         normalize=not args.no_normalize, stopwords=not args.no_stopwords, stem=not args.no_stem

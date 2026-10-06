@@ -9,6 +9,9 @@ chunking the corpus, and the frozen set measures them all alike.
 A question needs every quote on every page that answers it: a question on two
 documents needs both. Of a ranking, the measures are:
 
+- held: the share of the questions' quotes that some chunk of their page holds
+  at all, which bounds every other measure: a quote the extraction garbled
+  or the chunking cut apart cannot be retrieved;
 - recall at k: the share of a question's quotes held by a chunk among the
   first k, averaged over the questions;
 - complete at k: the share of questions all of whose quotes are held among
@@ -40,15 +43,27 @@ def quote_parts(quote: str | Sequence[str]) -> list[str]:
     return [for_comparison(part) for part in ([quote] if isinstance(quote, str) else quote)]
 
 
-def evidence(
-    question: Mapping[str, Any], chunks: Sequence[Mapping[str, Any]]
-) -> list[frozenset[str]]:
-    """For each quote the question needs, the ids of the chunks of its page that hold it."""
-    pages: dict[tuple[str, int], list[tuple[str, str]]] = defaultdict(list)
+Pages = dict[tuple[str, int], list[tuple[str, str]]]
+
+
+def by_page(chunks: Sequence[Mapping[str, Any]]) -> Pages:
+    """Each page's chunks, as their ids and their text normalized for comparison."""
+    pages: Pages = defaultdict(list)
     for chunk in chunks:
         pages[(chunk["doc_id"], chunk["page"])].append(
             (chunk["chunk_id"], for_comparison(chunk["text"]))
         )
+    return pages
+
+
+def evidence(
+    question: Mapping[str, Any], chunks: Sequence[Mapping[str, Any]] | Pages
+) -> list[frozenset[str]]:
+    """For each quote the question needs, the ids of the chunks of its page that hold it.
+
+    `chunks` may be given already arranged by_page, as for many questions.
+    """
+    pages = chunks if isinstance(chunks, dict) else by_page(chunks)
     found = []
     for ref in question.get("source_refs", []):
         if ref.get("role") != "answer_evidence":
@@ -113,10 +128,11 @@ def evaluate(
 ) -> list[Ranked]:
     """Every answerable question searched for, and where its evidence ranked."""
     results = []
+    pages = by_page(chunks)
     for question in questions:
         if question["answerability_status"] not in ANSWERABLE:
             continue
-        units = evidence(question, chunks)
+        units = evidence(question, pages)
         if not units:
             continue
         results.append(rank_evidence(question, units, search(question["question"], depth)))
@@ -124,10 +140,15 @@ def evaluate(
 
 
 def summary(results: Sequence[Ranked], k_values: Sequence[int] = K_VALUES) -> dict[str, float]:
-    """The measures over a set of questions: recall and completeness at each k, and MRR@10."""
+    """The measures over a set of questions: the share of their quotes some chunk holds,
+    recall and completeness at each k, and MRR@10."""
     if not results:
         return {}
-    found: dict[str, float] = {"questions": len(results)}
+    quotes = sum(len(result.ranks) for result in results)
+    found: dict[str, float] = {
+        "questions": len(results),
+        "held": 1 - sum(result.unheld for result in results) / quotes,
+    }
     for k in k_values:
         found[f"recall@{k}"] = mean(result.recall(k) for result in results)
     for k in k_values:
