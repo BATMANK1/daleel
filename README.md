@@ -5,6 +5,11 @@
 Answers questions about Royal Commission for Jubail and Yanbu college
 regulations in Arabic, with the exact clause cited.
 
+On the 54 development questions the corpus answers, a naive pipeline
+(poppler's `pdftotext`, BM25 on words as written) puts 15% of the evidence
+among its first five results. Daleel's extraction, chunking and Arabic
+analyzer put 84% there ([table T3](eval/results/retrieval.md)).
+
 > **Status: in development.** This README grows with the repository.
 > No result is published here until it has been measured. See
 > [Results](#results).
@@ -346,7 +351,27 @@ question words of Saudi Arabic), and Lucene's light stemmer. Each step can
 be turned off, to measure what it buys: `scripts/ablate_normalization.py`
 adds them one at a time, and sets the pipeline's chunks beside a naive
 pipeline's, poppler's `pdftotext` read word for word, chunked the same way
-(table T3). Its numbers are published here once the gold set is frozen.
+(table T3). On the 54 development questions:
+
+| BM25 | recall@5 | complete@5 |
+|---|---|---|
+| pdftotext, words as written | 0.154 | 0.148 |
+| pdftotext, full analyzer | 0.597 to 0.662 | 0.500 to 0.593 |
+| pipeline, words as written | 0.569 | 0.519 |
+| + normalization | 0.752 | 0.685 |
+| + stopwords | 0.758 | 0.685 |
+| + light stemming | 0.841 | 0.759 |
+
+The pdftotext rows depend on the poppler version: 26.01 and 24.02 give the
+two ends of each range. Its text lacks a quarter to a third of the
+evidence, almost all of it on pages the quality gate sends to OCR.
+Normalization is the largest single step, and stemming the next; stopwords
+change nothing measurable. The 13 questions without all their evidence in
+the first five ask for several clauses at once, word things as students do
+rather than as the regulations do, name documents instead of the rule, or
+ask in English.
+[`eval/results/retrieval.md`](eval/results/retrieval.md) has the held-out
+questions, every miss, and the limits.
 
 ## Usage
 
@@ -401,8 +426,12 @@ dots.mocr, a vision language model, reads Arabic about three times as
 accurately as Tesseract or PaddleOCR, and invented a second date in every date
 box of the academic calendar. The calendar's events are rebuilt from its text
 layer instead, and its first page matches its ground truth cell for cell
-([Calendar](#calendar)). Retrieval and arm-comparison tables land here as that
-work completes. Nothing is published here before it is measured.
+([Calendar](#calendar)). Retrieval with BM25 is measured in
+[`eval/results/retrieval.md`](eval/results/retrieval.md) (table T3): 84% of
+the development questions' evidence among the first five results, against
+15% for a naive pipeline. Dense retrieval, fusion and reranking (T4) and the
+arm comparison land here as that work completes. Nothing is published here
+before it is measured.
 
 ## Licence
 
