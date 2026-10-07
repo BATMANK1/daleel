@@ -1,10 +1,17 @@
 """Retrieval measured against the gold set's evidence.
 
 The gold set names no chunks. Each answering page carries quotes, and a chunk
-holds a quote when the quote, normalized for comparison, is in the chunk's
-text; a quote given as a list holds only where all its parts are in one
-chunk. So the evidence a question needs is found anew for every way of
-chunking the corpus, and the frozen set measures them all alike.
+holds a quote when the quote's words, normalized for comparison, appear in
+the chunk's text one after another, in the same order; a quote given as a
+list holds only where all its parts are in one chunk. So the evidence a
+question needs is found anew for every way of chunking the corpus, and the
+frozen set measures them all alike.
+
+Only words count, letters and digits, not the punctuation and spaces between
+them. Extractors place brackets, slashes and spaces differently around
+right-to-left text: pdftotext writes (20%) as )(20%, and 15 وحدة as
+15وحدة. Matching character for character counted such text as missing the
+evidence, though every word was there, and a reader or a retriever finds it.
 
 A question needs every quote on every page that answers it: a question on two
 documents needs both. Of a ranking, the measures are:
@@ -26,6 +33,7 @@ find, and how a system declines them is measured on its answers.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -38,21 +46,28 @@ from daleel.normalize.arabic import for_comparison
 K_VALUES = (1, 5, 10, 20)
 
 
+# A run of letters or a run of digits: a number glued to a word is two words.
+_WORD = re.compile(r"\d+|[^\W\d_]+")
+
+
+def words_of(text: str) -> str:
+    """A text's words, normalized for comparison, between single spaces at both ends."""
+    return " " + " ".join(_WORD.findall(for_comparison(text))) + " "
+
+
 def quote_parts(quote: str | Sequence[str]) -> list[str]:
-    """A quote's parts, each normalized for comparison: one, or a group's."""
-    return [for_comparison(part) for part in ([quote] if isinstance(quote, str) else quote)]
+    """A quote's parts, each as words_of gives it: one, or a group's."""
+    return [words_of(part) for part in ([quote] if isinstance(quote, str) else quote)]
 
 
 Pages = dict[tuple[str, int], list[tuple[str, str]]]
 
 
 def by_page(chunks: Sequence[Mapping[str, Any]]) -> Pages:
-    """Each page's chunks, as their ids and their text normalized for comparison."""
+    """Each page's chunks, as their ids and their words (words_of)."""
     pages: Pages = defaultdict(list)
     for chunk in chunks:
-        pages[(chunk["doc_id"], chunk["page"])].append(
-            (chunk["chunk_id"], for_comparison(chunk["text"]))
-        )
+        pages[(chunk["doc_id"], chunk["page"])].append((chunk["chunk_id"], words_of(chunk["text"])))
     return pages
 
 
