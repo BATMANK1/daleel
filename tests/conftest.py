@@ -6,8 +6,10 @@ an import.
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -62,3 +64,18 @@ def make_pdf(tmp_path: Path) -> Callable[..., Path]:
         return path
 
     return make
+
+
+@pytest.fixture
+def script() -> Callable[[str], ModuleType]:
+    """Load one of the scripts in scripts/ as a module, so a test can call its main."""
+
+    def load(name: str) -> ModuleType:
+        path = Path(__file__).parent.parent / "scripts" / f"{name}.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    return load

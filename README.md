@@ -373,6 +373,16 @@ ask in English.
 [`eval/results/retrieval.md`](eval/results/retrieval.md) has the held-out
 questions, every miss, and the limits.
 
+Dense retrieval is measured the same way (table T4). Two multilingual
+encoders, bge-m3 and multilingual-e5-large-instruct, map questions and chunks
+to vectors; BM25 is fused with each and with both by reciprocal rank fusion;
+and a cross-encoder, bge-reranker-v2-m3, reorders the first 20 of each
+fusion. The models want a GPU that the evaluation need not have, so
+`scripts/encode_dense.py` and `scripts/score_rerank_pool.py` compute the
+vectors and scores once and keep them in `data/interim/`, each under a hash
+of the text it came from, with the model, its revision, the library versions
+and the device. `scripts/eval_hybrid.py` measures every row from those alone.
+
 ## Usage
 
 ```bash
@@ -393,6 +403,11 @@ python3 scripts/check_calendar_csv.py <csv> <ics> # check a page of calendar row
 python3 scripts/check_gold.py --records           # check the gold set, its quotes against the pages
 python3 scripts/eval_retrieval.py --misses        # BM25 measured against the gold set's evidence
 python3 scripts/ablate_normalization.py           # table T3: what extraction and each analyzer step buy
+uv pip install -e ".[dense]"                      # the encoders and the reranker (see the dependency note)
+python3 scripts/encode_dense.py                   # chunks and questions as vectors, kept for T4
+python3 scripts/score_rerank_pool.py              # the reranker's scores for every candidate, kept for T4
+python3 scripts/eval_hybrid.py                    # table T4: the encoders, fusion and reranking
+python3 scripts/time_retrieval.py --dense bge-m3  # time each stage per question; --rerank adds the reranker
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
@@ -416,6 +431,13 @@ calendar's grid is rebuilt from PDFium's character boxes instead, which come
 with its text in logical order.
 PyMuPDF was ruled out because it is AGPL-licensed, a blanket disqualifier at
 many organisations that would force this repository's own licence to match.
+
+The `dense` extra pins **sentence-transformers** (Apache-2.0) and
+**transformers** (Apache-2.0), so that vectors and scores from different runs
+can be compared. It brings PyTorch with it: on a GPU, install the PyTorch
+build for your CUDA version first, as <https://pytorch.org> shows, or pip may
+bring one that does not use the GPU. The encoders are MIT-licensed and the
+reranker Apache-2.0.
 
 ## Results
 
