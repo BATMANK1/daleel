@@ -8,7 +8,9 @@ regulations in Arabic, with the exact clause cited.
 On the 54 development questions the corpus answers, a naive pipeline
 (poppler's `pdftotext`, BM25 on words as written) puts 15% of the evidence
 among its first five results. Daleel's extraction, chunking and Arabic
-analyzer put 84% there ([table T3](eval/results/retrieval.md)).
+analyzer put 84% there ([table T3](eval/results/retrieval.md)), and fusing
+BM25 with a multilingual encoder and reranking the result puts 93% there
+([table T4](eval/results/retrieval.md#t4)).
 
 > **Status: in development.** This README grows with the repository.
 > No result is published here until it has been measured. See
@@ -382,6 +384,22 @@ fusion. The models want a GPU that the evaluation need not have, so
 vectors and scores once and keep them in `data/interim/`, each under a hash
 of the text it came from, with the model, its revision, the library versions
 and the device. `scripts/eval_hybrid.py` measures every row from those alone.
+On the 54 development questions, with times per question on an RTX 3060 Ti:
+
+| | recall@5 | complete@5 | p50 ms | p95 ms |
+|---|---|---|---|---|
+| BM25 | 0.841 | 0.759 | 0.6 | 1.0 |
+| bge-m3 | 0.806 | 0.704 | 28.6 | 38.9 |
+| BM25 + bge-m3, fused | 0.873 | 0.796 | 29.2 | 39.4 |
+| **BM25 + bge-m3, fused and reranked** | **0.931** | **0.852** | **237.5** | **298.0** |
+
+On these questions neither encoder alone beats BM25, but an encoder and
+BM25 miss different questions, so fusing them gives the reranker more of the
+evidence to reorder. The reranker makes most of the gain and most of the wait. The
+last row was chosen on the development questions; on the 18 held out, run
+once afterwards, it puts 91% of the evidence in the first five, against
+BM25's 78%. Of the 4 English questions, BM25 finds evidence for 2, and the
+last row for all 4.
 
 ## Usage
 
@@ -451,9 +469,11 @@ layer instead, and its first page matches its ground truth cell for cell
 ([Calendar](#calendar)). Retrieval with BM25 is measured in
 [`eval/results/retrieval.md`](eval/results/retrieval.md) (table T3): 84% of
 the development questions' evidence among the first five results, against
-15% for a naive pipeline. Dense retrieval, fusion and reranking (T4) and the
-arm comparison land here as that work completes. Nothing is published here
-before it is measured.
+15% for a naive pipeline. Fused with bge-m3 and reranked by
+bge-reranker-v2-m3 (table T4), retrieval puts 93% there, and 91% of the
+held-out questions' evidence against BM25's 78%, in 238 ms per question
+at the median on an RTX 3060 Ti. The arm comparison lands here as that work
+completes. Nothing is published here before it is measured.
 
 ## Licence
 
