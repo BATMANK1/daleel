@@ -20,8 +20,12 @@ CANDIDATES = 100
 Search = Callable[[str, int], Sequence[str]]
 
 
-def fusions(bm25: Search, dense: Mapping[str, Search]) -> dict[str, list[Search]]:
-    """The fusions compared: BM25 with each dense encoder, and with all of them."""
+def fusions[T](bm25: T, dense: Mapping[str, T]) -> dict[str, list[T]]:
+    """The fusions compared, by name: BM25 with each dense encoder, and with all of them.
+
+    `bm25` and the values of `dense` are whatever stands for each retriever: its
+    search, or its name.
+    """
     found = {f"BM25 + {name}": [bm25, search] for name, search in dense.items()}
     if len(dense) > 1:
         found["BM25 + " + " + ".join(dense)] = [bm25, *dense.values()]
