@@ -5,6 +5,7 @@ description = "Arabic regulations Q&A over RCJY college documents, with cited an
 requires-python = ">=3.12,<3.14"
 dependencies = [
   "pdfplumber>=0.11",
+  "numpy>=2",
   "pillow>=10",
   # 5.13.0 ships PDFium 153.0.7999.0, which puts the words of an Arabic line
   # last word first. 5.12.1 keeps them in order, and reads all 257 pages of the
@@ -17,6 +18,13 @@ dev = [
   "pytest",
   "ruff",
   "pre-commit",
+]
+# The dense encoders and the reranker, pinned so their vectors and scores can be
+# compared across runs. PyTorch comes with them; on a GPU, install the build
+# for your CUDA first, as https://pytorch.org shows.
+dense = [
+  "sentence-transformers==6.1.0",
+  "transformers==5.19.0",
 ]
 # The PaddleOCR engine, pinned: its results are only comparable at one version.
 # PaddlePaddle stays at 3.2.2 because 3.3.0 and 3.3.1 break MKL-DNN, the
