@@ -1,16 +1,18 @@
-# Retrieval with BM25 (T3)
+# Retrieval (T3 and T4)
 
-This document measures the first retriever, BM25, against the gold set. It
-asks how much of the evidence each question needs is ranked among the first
-five chunks, and how much of that the extraction and each step of the Arabic
-analyzer contribute. It holds table T3. Dense encoders, fusion and reranking
-(T4) will be added here once they are measured.
+This document measures retrieval against the gold set: how much of the
+evidence each question needs is ranked among the first five chunks. Table T3
+measures BM25, and how much of it the extraction and each step of the Arabic
+analyzer contribute. Table T4 adds two dense encoders, their fusion with
+BM25, and a cross-encoder that reranks the fused result.
 
-The numbers come from `scripts/ablate_normalization.py` and
+T3's numbers come from `scripts/ablate_normalization.py` and
 `scripts/eval_retrieval.py`, run on two machines with two versions of
-poppler. Every design choice rests on the development questions alone. The
-held-out questions are reported only for configurations that involve no
-tuning.
+poppler. T4's come from `scripts/eval_hybrid.py` and
+`scripts/time_retrieval.py`, over vectors and scores computed on one GPU.
+Every design choice rests on the development questions alone. The held-out
+questions are reported for T3, which involves no tuning, and for T4 once its
+configuration was fixed (section 5).
 
 ## Setup
 
@@ -54,8 +56,31 @@ tuning.
   - a stopword list, including the colloquial question words of Saudi
     Arabic;
   - Lucene's Arabic light stemmer.
+- **Dense retrieval (T4):**
+  - *Encoders:* BAAI's bge-m3 and intfloat's multilingual-e5-large-instruct,
+    each encoding the chunk's text as BM25 indexes it. e5 reads each question
+    after an instruction, "Given a student's question about college
+    regulations, retrieve the passages that answer it", and bge-m3 takes the
+    question as it is. Both read at most 512 tokens, and no chunk or question
+    is longer. A question's chunks are ranked by cosine similarity, exactly,
+    over all 768.
+  - *Fusion:* reciprocal rank fusion with k = 60 over the first 100 chunks of
+    each ranking.
+  - *Reranking:* BAAI's bge-reranker-v2-m3 reads the question with each of
+    the first 20 fused chunks and reorders them by its score. The chunks after
+    them keep their order.
+  - *Stored, then measured:* `scripts/encode_dense.py` and
+    `scripts/score_rerank_pool.py` ran the models once, on machine A's GPU in
+    half precision, and stored every vector and score under a hash of the
+    text it came from, with the model's revision and the library versions:
+    bge-m3 at 5617a9f, multilingual-e5-large-instruct at 274baa4 and
+    bge-reranker-v2-m3 at 953dc6f.
+    Every T4 row is computed from those files, and reading them needs
+    neither the models nor a GPU.
 - **Machines:**
-  - *A*: Windows with WSL 2, Python 3.12.14, poppler 26.01.0.
+  - *A*: Windows with WSL 2, Python 3.12.14, poppler 26.01.0. For T4, an
+    NVIDIA GeForce RTX 3060 Ti with 8 GB, driver 610.88, PyTorch 2.14.1 for
+    CUDA 13.0, sentence-transformers 6.1.0 and transformers 5.19.0.
   - *B*: Linux, Python 3.12.3, pypdfium2 5.12.1 (PDFium 152.0.7947.0),
     poppler 24.02.0.
 
@@ -205,11 +230,153 @@ questions, the 20 asked by classmates have recall@5 0.879, and the 31 written
 to cover the corpus have 0.833. The authored questions are not easier for
 BM25.
 
-## 4. Limits
+## T4
+
+Over the 54 development questions the corpus answers. Every row holds all
+the evidence (*held* 1.000), so that column is left out. The times are per
+question, from the question's text to the ranked chunks, on machine A's GPU.
+
+| | recall@5 | recall@10 | complete@5 | MRR@10 | p50 ms | p95 ms |
+|---|---|---|---|---|---|---|
+| BM25, full analyzer (T3) | 0.841 | 0.897 | 0.759 | 0.681 | 0.6 | 1.0 |
+| bge-m3 | 0.806 | 0.829 | 0.704 | 0.661 | 28.6 | 38.9 |
+| multilingual-e5-large-instruct | 0.795 | 0.894 | 0.722 | 0.695 | 22.7 | 38.4 |
+| RRF: BM25 + bge-m3 | 0.873 | 0.966 | 0.796 | 0.761 | 29.2 | 39.4 |
+| RRF: BM25 + e5 | 0.878 | 0.941 | 0.796 | 0.784 | 23.3 | 39.0 |
+| RRF: BM25 + both | 0.863 | 0.909 | 0.759 | 0.775 | 54.0 | 72.5 |
+| **RRF: BM25 + bge-m3, reranked** | **0.931** | **0.960** | **0.852** | **0.811** | **237.5** | **298.0** |
+| RRF: BM25 + e5, reranked | 0.906 | 0.931 | 0.815 | 0.788 | 210.0 | 271.5 |
+| RRF: BM25 + both, reranked | 0.935 | 0.941 | 0.870 | 0.808 | 241.5 | 309.6 |
+
+The row in bold is the configuration chosen in section 5. The same rows over
+the 18 held-out questions, run once after that choice:
+
+| | recall@5 | recall@10 | complete@5 | MRR@10 |
+|---|---|---|---|---|
+| BM25, full analyzer (T3) | 0.778 | 0.870 | 0.722 | 0.687 |
+| bge-m3 | 0.796 | 0.884 | 0.722 | 0.634 |
+| multilingual-e5-large-instruct | 0.704 | 0.903 | 0.667 | 0.679 |
+| RRF: BM25 + bge-m3 | 0.829 | 0.903 | 0.778 | 0.760 |
+| RRF: BM25 + e5 | 0.833 | 0.903 | 0.833 | 0.729 |
+| RRF: BM25 + both | 0.829 | 0.958 | 0.778 | 0.747 |
+| **RRF: BM25 + bge-m3, reranked** | **0.907** | **0.940** | **0.833** | **0.753** |
+| RRF: BM25 + e5, reranked | 0.907 | 0.944 | 0.833 | 0.738 |
+| RRF: BM25 + both, reranked | 0.907 | 0.926 | 0.833 | 0.731 |
+
+Fused and reranked, the first five chunks hold 93% of the development
+evidence, against 84% for BM25, and every piece of it for 46 of the 54
+questions, against 41. On the held-out questions the figures are 91% against
+78%, and 15 of 18 questions against 13.
+
+## 4. What each stage buys
+
+**Alone, neither encoder beats BM25 on these questions, but each finds
+evidence BM25 misses.**
+bge-m3 puts 0.806 of the development evidence in the first five, and e5
+0.795, against BM25's 0.841. But 7 questions have all their evidence in
+BM25's first five and not in bge-m3's (g002, g008, g016, g041, g062, g063,
+g068), and 4 the other way round (g019, g044, g056, g078). Those 4 are
+misses of BM25 from section 3, where the student's words are not the page's
+or the question is in English.
+
+**Fusion widens the pool more than it sharpens the top.** BM25 fused with
+bge-m3 lifts recall@10 from 0.897 to 0.966, and recall@5 only from 0.841 to
+0.873, with 7 questions gaining recall@5 and 5 losing it. What fusion buys
+is mostly in ranks 6 to 20, where a reranker can reach it.
+
+**The reranker turns the pool into the first five.** Reranking the fused
+first 20 lifts recall@5 from 0.873 to 0.931, complete@5 from 0.796 to 0.852,
+and the share of evidence ranked first from 0.506 to 0.603. 5 development
+questions gain recall@5 and 1 loses it. On the held-out questions it lifts
+recall@5 from 0.829 to 0.907: two questions gain all their evidence in the
+first five, and two lose a part of theirs. It is also the slow stage:
+reranking 20 chunks takes 206 of the 238 ms the chosen configuration needs
+per question at the median, and 255 of 298 ms at the 95th percentile. The
+design asked whether the reranker pays for its latency. A fifth of a second
+per question, before an answer is even generated, buys 6 points of recall@5
+on the development questions and 8 on the held-out ones. It stays.
+
+**Reranking BM25 alone gets most of the way.** Without an encoder, the
+reranked BM25 ranking reaches recall@5 0.912 and complete@5 0.833 on the
+development questions, against 0.931 and 0.852 with fusion, and 0.852 and
+0.778 on the held-out ones, against 0.907 and 0.833. The encoder's part is
+the questions whose evidence BM25 does not rank in its first 20 at all:
+g038 and g078 among the development questions, g077 among the held-out
+ones. It costs g008, below.
+
+**English questions need the encoder.** Of the 4 in English (3 for
+development, 1 held out), BM25 finds evidence for 2, through numbers and the
+English labels of the calendar and the portal, and none for g077 and g078.
+Fused and reranked, all 4 have their evidence in the first five. The design
+also names a second way, translating the question into Arabic before
+retrieving. It needs the generator, and with 4 English questions neither
+way can be shown better than the other.
+
+## 5. Choosing the configuration
+
+The configuration was fixed on the development questions on 7 October,
+before the held-out questions were run: BM25 + bge-m3, fused over the first
+100 of each, with the first 20 reranked.
+
+- **One encoder.** Fusing both encoders with BM25 and reranking gains one
+  development question (complete@5 0.870 against 0.852) and costs a second
+  model and its encoding, about 22 ms per question. One question is not a
+  difference.
+- **bge-m3 rather than e5.** Reranked, bge-m3's fusion is ahead on recall@5
+  for 2 questions and behind for none. Before reranking, e5's fusion has the
+  better MRR@10, 0.784 against 0.761. The evidence is thin. The timing,
+  measured after the choice, favours e5: its reranked row took 210 ms at the
+  median against 238. The encoders take about the same time, 16 and 22 ms to
+  encode a question, and most of the difference is in reranking, whose time
+  follows the length of the chunks it reads.
+- **Reranking 20.** The design set 20 before anything was measured.
+  Reranking 10 did as well on the development questions, one question
+  better (recall@5 0.935, complete@5 0.870), in 136 ms at the median instead
+  of 238. But a setting changed on one question is a setting tuned to the
+  noise, so the design stands.
+
+On the held-out questions, the choices between near ties made no
+difference except one. Both encoders, or e5 instead of bge-m3, give the same
+recall@5 and complete@5 there (0.907 and 0.833). Reranking 10 would have
+given 0.852 and 0.778, a question fewer.
+
+## 6. Where the hybrid still fails
+
+8 of the 54 development questions still lack some evidence in the first
+five, against 13 for BM25. Seven of BM25's misses are found (g019, g038,
+g043, g044, g056, g060, g078), and two questions BM25 answered in full are
+lost (g008, g041).
+
+- **Parts outside the first 20** (g042, g045, g046, g059). Some part of the
+  evidence is not among the fused first 20 at all, so the reranker never
+  reads it. These questions ask for several clauses at once, and one ranking
+  per question finds the clause that matches the question as a whole.
+  Splitting such a question into its parts belongs to the query rewriting
+  step of the answering pipeline.
+- **Documents named instead of the rule** (g065, g066). Their evidence moves
+  up, in g065 from ranks 14, 16, 6 and none to 6, 5, 1 and 4, but one part
+  stays just outside the first five.
+- **A list without its heading** (g008). The clause listing accepted excuses
+  begins "1- في حال التنويم" and never says عذر. The word is in its heading,
+  "شروط قبول اعذار الغياب", which is the chunk's metadata, and neither the
+  encoders nor the reranker read it. BM25 ranks the clause first on the
+  words الإصابة بمرض, which only two chunks contain. The reranker ranks it
+  sixth, behind chunks about excuses in general.
+- **The rule's other source** (g041). The gold set cites the student guide's
+  summary of re-marking a final exam, on pages 59 and 60. The reranker ranks
+  two chunks of the regulations' own article on it, article 65 on page 25 of
+  the organizational regulations, third and fourth, ahead of the cited
+  pages. The article answers the question too, and differs from the guide in
+  one detail: the regulations finish the review within five working days of
+  the request, the guide within a week. It is a candidate for gold_v2, with
+  g056's page 9.
+
+## 7. Limits
 
 - **Small samples.** One development question is 1.9 points of recall@5, and
   one held-out question is 5.6. Differences smaller than a question or two,
-  such as the stopwords row, are noise.
+  such as the stopwords row and the choices between near ties in section 5,
+  are noise.
 - **Holding the words is not answering.** A chunk counts if it contains the
   quote's words. Whether a model can answer from it is measured on answers.
 - **Evidence is what the gold set cites.** Another page with the same answer
@@ -217,6 +384,19 @@ BM25.
   reported beside v1, and v1 is not changed.
 - **One extraction.** Both machines chunk the records extracted once on
   machine A. OCR is cached and was not repeated on machine B.
+- **One GPU.** The vectors and scores were computed once, in half precision.
+  Another GPU or precision would give slightly different numbers, so T4 is
+  reproduced from the stored files rather than from the models. In half
+  precision, the reranker gives two different chunks of a question's first
+  20 the same score 8 times over the 80 questions, and tied chunks keep
+  their fused order.
+- **Latency on one machine.** Times are for one question at a time, with the
+  models loaded and warm, the stages run one after another, and WSL 2
+  between the code and the GPU. Loading the models is not counted. The same
+  row varies between runs: bge-m3 alone took 28.6 ms at the median in one
+  run and 20.1 in another, most of the difference in searching 768 vectors,
+  which took 11.9 ms in the first and 2.3 in the second for the same work.
+  Differences of 10 ms or so between rows are within that.
 
 ## Reproduce
 
@@ -225,7 +405,15 @@ daleel chunk                                             # data/processed/chunks
 python3 scripts/ablate_normalization.py --split dev      # T3, development questions
 python3 scripts/ablate_normalization.py --split final    # T3, held-out questions
 python3 scripts/eval_retrieval.py --split dev --misses   # by type and language, and the misses
+uv pip install -e ".[dense]"                             # T4: the models' libraries
+python3 scripts/encode_dense.py                          # vectors, in data/interim/dense/
+python3 scripts/score_rerank_pool.py                     # reranker scores, in data/interim/rerank/
+python3 scripts/eval_hybrid.py --split dev               # T4, development questions
+python3 scripts/eval_hybrid.py --split final             # T4, held-out questions
+python3 scripts/time_retrieval.py --dense bge-m3 --dense e5-large-instruct --rerank
 ```
 
 The pdftotext rows need poppler-utils and the PDFs in `data/raw/`. The last
-line of the script's output names the poppler version.
+line of the script's output names the poppler version. The T4 scripts after
+the first two need neither the models nor a GPU, only the stored files, and
+print the models' revisions and the device that made them.
