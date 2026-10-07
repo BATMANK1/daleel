@@ -251,3 +251,33 @@ def test_the_scored_pool_covers_every_ranking_the_evaluation_reranks(
     eval_hybrid = script("eval_hybrid")
     assert eval_hybrid.main([*argv, "--rerank", str(target), "--rerank-depth", "2"]) == 0
     assert "RRF: BM25 + bge-m3 + e5-large-instruct, reranked" in capsys.readouterr().out
+
+
+def test_the_timing_reports_every_row_of_the_table_and_every_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: Callable[[str], ModuleType],
+) -> None:
+    class StandIn:
+        device = "cpu"
+
+        def encode(self, texts: list[str], **options: object) -> np.ndarray:
+            return np.array([unit(1, 0.1) for _ in texts])
+
+        def predict(self, pairs: list, **options: object) -> list[float]:
+            return [float(len(text)) for _, text in pairs]
+
+    argv = stores(tmp_path)
+    argv[argv.index("--dense")] = "--vectors"
+    time_retrieval = script("time_retrieval")
+    monkeypatch.setattr(time_retrieval, "load_model", lambda encoder, device, path: StandIn())
+    monkeypatch.setattr(time_retrieval, "load_reranker", lambda device, path: StandIn())
+    encoders = ["--dense", "bge-m3", "--dense", "e5-large-instruct"]
+    assert time_retrieval.main([*argv, *encoders, "--rerank"]) == 0
+    rows = [line.split(" | ")[0][2:] for line in capsys.readouterr().out.splitlines()]
+    fused = ["BM25 + bge-m3", "BM25 + e5-large-instruct", "BM25 + bge-m3 + e5-large-instruct"]
+    expected = ["BM25", "bge-m3", "e5-large-instruct"]
+    expected += [row for name in fused for row in (f"RRF: {name}", f"RRF: {name}, reranked")]
+    assert rows[2 : 2 + len(expected)] == expected
+    assert {"bm25", "encode e5-large-instruct", "rerank BM25 + bge-m3"} <= set(rows)
