@@ -54,6 +54,20 @@ def test_a_quote_is_found_after_normalization() -> None:
     assert found == [frozenset({"ch4a"})]
 
 
+def test_a_quote_is_held_whatever_the_punctuation_and_spacing_around_its_words() -> None:
+    # pdftotext writes the brackets of right-to-left text the other way round,
+    # and glues a number to the word after it.
+    chunks = [chunk("p", GUIDE, 30, "تجاوز نسبة الغياب )(20% من الساعات، اجتاز 15وحدة دراسية")]
+    q = question("g1", [ref(GUIDE, 30, ["نسبة الغياب (20%) من", "اجتاز 15 وحدة"])])
+    assert evidence(q, chunks) == [frozenset({"p"}), frozenset({"p"})]
+
+
+def test_a_quote_s_words_must_be_whole_and_in_order() -> None:
+    chunks = [chunk("p", GUIDE, 30, "تجاوز نسبة الغياب المسموح")]
+    q = question("g1", [ref(GUIDE, 30, ["نسبة الغيا", "الغياب نسبة", "نسبة الغياب"])])
+    assert evidence(q, chunks) == [frozenset(), frozenset(), frozenset({"p"})]
+
+
 def test_chunks_arranged_by_page_once_give_the_same_evidence() -> None:
     q = question("g1", [ref(GUIDE, 30, ["نسبة الغياب"]), ref(CHARTER, 4, ["خصوصية"])])
     assert evidence(q, by_page(CHUNKS)) == evidence(q, CHUNKS)

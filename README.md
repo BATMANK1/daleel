@@ -332,7 +332,8 @@ its share of the set (`choose_final` in `daleel.eval.gold`, seed 1448). Of the
 
 The gold set names pages and quotes, not chunks, so the evidence a question
 needs is found anew for every way of chunking: a chunk holds a quote when the
-quote, normalized, is in its text, and a quote given as a group of parts
+quote's words, normalized, appear in its text one after another, whatever the
+punctuation and spacing between them, and a quote given as a group of parts
 holds only where all of them are in one chunk. A question needs every quote
 on every page that answers it. `scripts/eval_retrieval.py` searches the
 chunks for each of the 72 questions the corpus answers and reports recall
