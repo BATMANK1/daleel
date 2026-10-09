@@ -18,6 +18,8 @@ Prints one row per arm:
 - refused: outside-corpus questions it declined;
 - gap named: questions the corpus answers in part, answered with the gap named;
 - declined wrongly: answerable questions it declined;
+- gap on answerable: answerable questions where it named something missing,
+  which should be rare;
 - tokens in and out, seconds at the median, and US dollars per 1,000
   questions at paid rates.
 Then prints some answers to read.
@@ -136,6 +138,7 @@ def summarize(records: list[dict]) -> dict[str, str]:
         "refused": share(refuse),
         "gap named": share([not r["declined"] and r["gap_named"] for r in gap]),
         "declined wrongly": share([r["declined"] for r in answerable]),
+        "gap on answerable": share([r["gap_named"] for r in answerable]),
         "tokens in": f"{mean(r['tokens_in'] for r in records):.0f}",
         "tokens out": f"{mean(r['tokens_out'] for r in records):.0f}",
         "p50 s": f"{statistics.median(r['seconds'] for r in records):.1f}",
