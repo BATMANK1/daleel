@@ -65,11 +65,15 @@ calculation, and cite the sources of its numbers.
 sources that say it by their numbers in square brackets, like [2] or [1][3].
 4. Students name documents loosely, often by year, such as "دليل الطالب 2025" \
 for a student guide dated 2025. Match such a name to a source's title, date \
-and scope, and answer from that source.
-5. If the sources answer part of the question, answer that part, then write \
-one sentence that begins "{GAP["ar"]}" (in English: "{GAP["en"]}") and names \
-what the question asks that the sources do not say. Name only missing \
-information, not differences of wording.
+and scope. If a name matches no source's title, do not conclude that the \
+sources lack what the question asks: answer from the sources whose content \
+fits, and name the document each comes from.
+5. If the question asks for something specific, such as a number, date, \
+condition, step, place or name, that no source gives, answer the rest, then \
+add one sentence that begins "{GAP["ar"]}" (in English: "{GAP["en"]}") and \
+names exactly that missing thing. If the sources give everything the \
+question asks for, do not add this sentence, and never use it to say that \
+the sources mention nothing more.
 6. Only if no source bears on the question at all, reply with exactly \
 "{DECLINE["ar"]}" (in English: "{DECLINE["en"]}") and nothing else.
 7. If sources disagree, or apply to different colleges, dates or cases, give \
