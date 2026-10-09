@@ -17,6 +17,7 @@ from daleel.answer.arms import (
     SYSTEM_C,
     UNKNOWN,
     citations,
+    readable_ranges,
     request,
     source_block,
 )
@@ -27,6 +28,8 @@ from daleel.retrieve.rerank import ScoreStore
 
 GUIDE = "student_guide_2025"
 TATWEEL = chr(0x0640)
+# The letter the calendar marks Hijri dates with.
+HIJRI = chr(0x0647)
 
 
 def chunk(chunk_id: str, page: int, text: str, **fields: object) -> dict:
@@ -65,6 +68,22 @@ def test_a_source_loses_its_stretching_strokes_and_keeps_its_spelling() -> None:
     assert "من الطالبُ" in block and 'section="الإنقطاع"' in block
 
 
+def test_a_source_says_when_and_whom_its_document_governs() -> None:
+    dated = {**SOURCES[0], "effective": "2025", "scope": "commission"}
+    block = source_block(1, dated)
+    assert (
+        'date="2025"' in block and 'scope="جميع كليات ومعاهد الهيئة الملكية للجبيل وينبع"' in block
+    )
+
+
+def test_calendar_ranges_printed_right_to_left_are_written_first_day_first() -> None:
+    printed = f"النهائية 2026/12/31-20م، 1448/07/22-11{HIJRI}، وبداية الدراسة 2026/08/23م"
+    assert readable_ranges(printed) == (
+        f"النهائية 2026/12/20 - 2026/12/31م، 1448/07/11 - 1448/07/22{HIJRI}، "
+        "وبداية الدراسة 2026/08/23م"
+    )
+
+
 def test_arm_a_asks_without_sources_and_says_how_to_decline() -> None:
     asked = request("A", "كم الرسوم؟")
     assert asked.system == SYSTEM_A and "<source" not in asked.prompt
@@ -95,6 +114,10 @@ def test_numbers_are_read_in_either_script_with_their_separators() -> None:
     written = f"المعدل {'3.75'.translate(arabic)} والرسوم 1,100 والغياب {'20'.translate(arabic)}%"
     assert numbers(written) == [3.75, 1100.0, 20.0]
     assert states_number("ألا يقل عن 3.75 من 4.00", 3.75)
+    assert numbers("خلال خمسة أيام عمل، وفي الأسبوع السابع") == [5.0, 7.0]
+    assert numbers("خمسة عشر يوماً، والمادة الحادية عشرة، وخمس وعشرون") == [15.0, 11.0, 25.0]
+    assert states_number("تقدم الطلب خلال عشرة أيام", 10)
+    assert not states_number("تقدم الطلب خلال أسبوع [5].", 5)
     assert not states_number("ألا يقل عن 3.5", 3.75)
 
 
