@@ -11,7 +11,9 @@ stopped by the day's quota, asks only what is new. The answers go to
 data/interim/runs/<arm>-<split>[-<tag>].jsonl.
 
 Prints one row per arm:
-- answered: the share of answerable questions it did not decline;
+- answered: the share of answerable questions it did not decline, either in
+  the fixed words or by saying only what the documents leave out, citing
+  nothing;
 - cited: the share of its answers to them with citations, all naming a source;
 - precision, recall: of its citations against the gold evidence (arm C);
 - numbers: numeric questions whose number it states exactly;
@@ -36,7 +38,7 @@ from pathlib import Path
 
 from daleel.answer.arms import ARMS, SOURCES, citations, request
 from daleel.answer.llm import GENERATOR, MODELS, Client, QuotaExhaustedError
-from daleel.answer.measure import citation_measures, declined, names_gap, states_number
+from daleel.answer.measure import citation_measures, declines, names_gap, states_number
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.gold import ANSWERABLE, GOLD_V1, SPLITS, behavior, load_gold
 from daleel.eval.retrieval import by_page, evidence
@@ -85,7 +87,7 @@ def answer_all(
             "sources": [source["chunk_id"] for source in sources],
             "cited": list(cited.numbers),
             "cited_unknown": list(cited.unknown),
-            "declined": declined(reply.text),
+            "declined": declines(reply.text, cited),
             "gap_named": names_gap(reply.text),
             "numeric_exact": (
                 states_number(reply.text, question["answer_numeric"])

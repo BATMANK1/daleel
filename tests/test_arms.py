@@ -22,7 +22,14 @@ from daleel.answer.arms import (
     source_block,
 )
 from daleel.answer.llm import GENERATOR, Reply
-from daleel.answer.measure import citation_measures, declined, names_gap, numbers, states_number
+from daleel.answer.measure import (
+    citation_measures,
+    declined,
+    declines,
+    names_gap,
+    numbers,
+    states_number,
+)
 from daleel.retrieve.dense import DOCUMENT, QUESTION, VectorStore
 from daleel.retrieve.rerank import ScoreStore
 
@@ -107,6 +114,13 @@ def test_declining_and_naming_a_gap_are_found_whatever_the_spelling() -> None:
     assert names_gap("الرسوم 250 [1]. لا تذكر الوثائق المتاحة مبلغ المواقف.")
     assert names_gap("The fee is 250 [1]. The available documents do not say when it is paid.")
     assert not names_gap("الرسوم 250 [1].")
+
+
+def test_saying_only_what_is_missing_with_nothing_cited_is_declining() -> None:
+    assert declines("لا تذكر الوثائق المتاحة مكافأة أرامكو.", citations("لا شيء"))
+    partial = "الطلب خلال أسبوع [1]. لا تذكر الوثائق المتاحة خطوات الإلغاء."
+    assert not declines(partial, citations(partial))
+    assert declines(DECLINE["ar"], citations(DECLINE["ar"]))
 
 
 def test_numbers_are_read_in_either_script_with_their_separators() -> None:

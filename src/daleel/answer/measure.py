@@ -63,6 +63,12 @@ def names_gap(answer: str) -> bool:
     return _has(answer, GAP)
 
 
+def declines(answer: str, cited: Citations) -> bool:
+    """Whether the answer declines in substance: in the fixed words, or by saying
+    only what the documents leave out, with nothing cited."""
+    return declined(answer) or (names_gap(answer) and not cited.numbers)
+
+
 def _word_value(token: str) -> int:
     """A number word's value, read through a leading و or ب, or 0."""
     if token in _WORDS:
