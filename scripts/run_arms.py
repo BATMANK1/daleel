@@ -8,7 +8,7 @@ Arm C's sources are the first five chunks of the retrieval chosen in table T4
 reranker scores stored in data/interim/, so no GPU is needed. Each answer is
 asked through daleel.answer.llm, which stores it, so a second run, or a run
 stopped by the day's quota, asks only what is new. The answers go to
-data/interim/runs/<arm>-<split>.jsonl.
+data/interim/runs/<arm>-<split>[-<tag>].jsonl.
 
 Prints one row per arm:
 - answered: the share of answerable questions it did not decline;
@@ -107,6 +107,10 @@ def answer_all(
     return found
 
 
+def run_name(arm: str, split: str, tag: str) -> str:
+    return f"{arm}-{split}{'-' + tag if tag else ''}.jsonl"
+
+
 def share(values: list[bool]) -> str:
     return f"{sum(values)}/{len(values)}" if values else "-"
 
@@ -150,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dense", type=Path, default=DENSE)
     parser.add_argument("--rerank", type=Path, default=RERANK / f"{RERANKER_NAME}.json")
     parser.add_argument("--out", type=Path, default=RUNS)
+    parser.add_argument("--tag", default="", help="added to the answer files' names")
     args = parser.parse_args(argv)
     for path in (args.chunks, args.gold, args.dense / "bge-m3.npz", args.rerank):
         if not path.exists():
@@ -168,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"stopped: {error}. Answers so far are stored; run again later.", file=sys.stderr)
             return 3
         args.out.mkdir(parents=True, exist_ok=True)
-        target = args.out / f"{arm}-{args.split}.jsonl"
+        target = args.out / run_name(arm, args.split, args.tag)
         target.write_text(
             "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
         )
@@ -186,7 +191,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n=== {question['qid']} ({question['type']}): {question['question']}")
         for arm in args.arms:
             lines = (
-                (args.out / f"{arm}-{args.split}.jsonl").read_text(encoding="utf-8").splitlines()
+                (args.out / run_name(arm, args.split, args.tag))
+                .read_text(encoding="utf-8")
+                .splitlines()
             )
             record = next(
                 json.loads(line) for line in lines if json.loads(line)["qid"] == question["qid"]
