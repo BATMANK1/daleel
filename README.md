@@ -475,6 +475,41 @@ held-out questions' evidence against BM25's 78%, in 238 ms per question
 at the median on an RTX 3060 Ti. The arm comparison lands here as that work
 completes. Nothing is published here before it is measured.
 
+## Prediction
+
+Stated on 9 October 2026, before any arm that answers questions was run.
+
+The study compares five ways of answering: A, a model without the
+documents; B, the whole corpus in the model's context; C, this pipeline,
+retrieving clauses for the model to answer from; D, a model fine-tuned on
+the corpus, without retrieval; E, the fine-tuned model with retrieval. Each
+comparison holds the model fixed. Arms A to C use `gemini-3.5-flash-lite`
+through Google's API, and arms A, C, D and E then run on one small
+open-weight model, which unlike an API model can be fine-tuned.
+
+1. **Arm A answers almost nothing.** Without the documents the model may
+   know the general shape of Saudi college rules, but not these colleges'
+   numbers. It will get few numeric questions exactly right, and it will
+   state wrong values rather than say it does not know.
+2. **Arm B comes close to arm C on accuracy, but not on citations or cost.**
+   With the whole corpus in its context it can find most answers, within
+   about 10 points of arm C's accuracy. But it has to name the page itself,
+   so fewer of its citations will hold the answer, and each question will
+   cost it about 50 times arm C's input tokens.
+3. **Arm C leads on valid citations and exact numbers,** and declines the
+   questions the corpus does not answer.
+4. **Retrieval beats fine-tuning on knowledge.** Fine-tuning teaches form
+   and behaviour far better than it teaches specific numbers. For a corpus
+   of precise thresholds, such as a cumulative average of 3.75 out of 4.00,
+   or fees of 250, 750 and 1,100 per credit unit, arm D will answer fluently
+   and with wrong values. Arm E may beat arm C on behaviour (register,
+   structure, declining what it cannot answer) while matching it on
+   knowledge: retrieval for facts, fine-tuning for form.
+
+With 72 answerable questions, differences under about 10 points are not
+findings. Each prediction will be marked here as held or not held, with its
+numbers, once its arms have run.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE).
