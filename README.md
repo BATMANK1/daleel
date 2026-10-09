@@ -426,6 +426,7 @@ python3 scripts/encode_dense.py                   # chunks and questions as vect
 python3 scripts/score_rerank_pool.py              # the reranker's scores for every candidate, kept for T4
 python3 scripts/eval_hybrid.py                    # table T4: the encoders, fusion and reranking
 python3 scripts/time_retrieval.py --dense bge-m3  # time each stage per question; --rerank adds the reranker
+python3 scripts/ask_llm.py "سؤال"                 # one question to the answering model, stored for reruns
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
