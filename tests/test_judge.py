@@ -10,7 +10,7 @@ from types import ModuleType
 
 import pytest
 
-from daleel.answer.llm import JUDGE, Reply, Request
+from daleel.answer.llm import JUDGE, LlmError, Reply, Request
 from daleel.eval.judge import (
     JUDGE_TOKENS,
     LABELS,
@@ -70,7 +70,7 @@ def record(answer: str, cited: list[int], sources: list[str], **fields: object) 
 def test_the_judge_reads_the_reference_the_evidence_and_what_the_answer_cites() -> None:
     answer = "الرسوم 250 [2]."
     asked = judge_request(question(), record(answer, [2], ["gpa", "fee"]), CHUNKS)
-    assert asked.model == JUDGE and asked.temperature == 0.0 and asked.purpose == "judge"
+    assert asked.model == JUDGE and asked.temperature is None and asked.purpose == "judge"
     assert asked.max_tokens == JUDGE_TOKENS
     assert asked.system == "" and asked.prompt.startswith(RUBRIC)
     for label in LABELS:
@@ -282,6 +282,28 @@ def test_t9_waits_until_every_answer_is_labelled(
     assert judge_agreement.main(argv) == 4
     err = capsys.readouterr().err
     assert "item 2: ''" in err and "item 3: 'maybe'" in err and FakeJudge.asked == 0
+
+
+def test_t9_stops_cleanly_when_the_api_keeps_failing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: Callable[[str], ModuleType],
+) -> None:
+    class Failing(FakeJudge):
+        def ask(self, asked: Request) -> Reply:
+            if "answer g2" in asked.prompt:
+                raise LlmError("gemma-4-31b-it: HTTP 500: Internal error encountered.")
+            return super().ask(asked)
+
+    argv = judged_files(tmp_path)
+    write_sheet(tmp_path / "labels", ["correct", "partial"], [("flow", "g1"), ("flow", "g2")])
+    judge_agreement = script("judge_agreement")
+    monkeypatch.setattr(judge_agreement, "Client", Failing)
+    argv += ["--labels", str(tmp_path / "labels"), "--runs", str(tmp_path / "runs")]
+    assert judge_agreement.main(argv) == 3
+    err = capsys.readouterr().err
+    assert "judged 1 of 2" in err and "HTTP 500" in err and "run again later" in err
 
 
 def test_a_judged_run_counts_each_label_overall_and_by_type(

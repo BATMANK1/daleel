@@ -135,12 +135,15 @@ def judge_request(
     """What the judge is asked about one answer.
 
     The rubric goes in the prompt rather than a system instruction, since Gemma
-    models on this API have not always accepted one. Temperature 0, so that
-    the judge's labels vary as little as it allows.
+    models on this API have not always accepted one. The temperature is the
+    model's own default: at temperature 0, the judge spent its whole reply
+    thinking on 3 of 40 answers with 2,048 tokens, and with 8,192 the API
+    mostly failed with errors 500 and 503. A label is asked for once and
+    stored, so a rerun reads the same labels.
     """
     parts = case(question, record, chunks).items()
     prompt = "\n\n".join([RUBRIC, *(f"<{name}>\n{text}\n</{name}>" for name, text in parts)])
-    return Request(model, prompt, max_tokens=JUDGE_TOKENS, temperature=0.0, purpose="judge")
+    return Request(model, prompt, max_tokens=JUDGE_TOKENS, purpose="judge")
 
 
 def verdict(text: str) -> str | None:
