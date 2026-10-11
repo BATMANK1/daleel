@@ -104,7 +104,9 @@ def build_flow(
             ids = []
 
         sources = [chunks_by_id[chunk_id] for chunk_id in ids]
-        score = (confidence(state["question"], sources) if sources and confidence is not None else None)
+        score = (
+            confidence(state["question"], sources) if sources and confidence is not None else None
+        )
 
         if not sources:
             reason = "no sources"
