@@ -21,7 +21,7 @@ from daleel.answer.arms import (
     request,
     source_block,
 )
-from daleel.answer.llm import GENERATOR, Reply
+from daleel.answer.llm import GENERATOR, Reply, Request
 from daleel.answer.measure import (
     citation_measures,
     declined,
@@ -168,27 +168,41 @@ def gold(qid: str, text: str, status: str, **fields: object) -> dict:
     }
 
 
+FEE_REF = {"doc_id": GUIDE, "pdf_page": 28, "role": "answer_evidence", "quotes": ["250"]}
+QUESTIONS = [
+    gold("g1", "كم رسوم الوحدة للطالب السعودي؟", "supported", numeric=250, refs=[FEE_REF]),
+    gold("g2", "كم تدفع أرامكو مكافأة؟", "outside_corpus", type="out_of_scope"),
+]
+
+
+def stored(tmp_path: Path, scores: dict[str, list[float]]) -> list[str]:
+    """The chunks, the questions, their vectors and reranker scores, on disk, as
+    arguments to the run: `scores` gives each question's score for each source."""
+    dense = tmp_path / "dense"
+    store = VectorStore()
+    store.add(DOCUMENT, [c["text"] for c in SOURCES], [unit(1, 0), unit(0, 1), unit(1, 1)])
+    store.add(QUESTION, [q["question"] for q in QUESTIONS], [unit(1, 0.1), unit(0, 1)])
+    store.save(dense / "bge-m3.npz")
+    reranker = ScoreStore()
+    for q in QUESTIONS:
+        reranker.add(q["question"], [c["text"] for c in SOURCES], scores[q["qid"]])
+    reranker.save(tmp_path / "rerank.json")
+    argv = ["--chunks", str(write_lines(tmp_path / "chunks.jsonl", SOURCES))]
+    argv += ["--gold", str(write_lines(tmp_path / "gold.jsonl", QUESTIONS))]
+    argv += ["--dense", str(dense), "--rerank", str(tmp_path / "rerank.json")]
+    return [*argv, "--out", str(tmp_path / "runs"), "--show", "1"]
+
+
+def saved(tmp_path: Path, name: str) -> list[dict]:
+    return [json.loads(line) for line in (tmp_path / "runs" / name).read_text().splitlines()]
+
+
 def test_the_run_answers_with_both_arms_and_measures_them(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     script: Callable[[str], ModuleType],
 ) -> None:
-    fee_ref = {"doc_id": GUIDE, "pdf_page": 28, "role": "answer_evidence", "quotes": ["250"]}
-    questions = [
-        gold("g1", "كم رسوم الوحدة للطالب السعودي؟", "supported", numeric=250, refs=[fee_ref]),
-        gold("g2", "كم تدفع أرامكو مكافأة؟", "outside_corpus", type="out_of_scope"),
-    ]
-    dense = tmp_path / "dense"
-    store = VectorStore()
-    store.add(DOCUMENT, [c["text"] for c in SOURCES], [unit(1, 0), unit(0, 1), unit(1, 1)])
-    store.add(QUESTION, [q["question"] for q in questions], [unit(1, 0.1), unit(0, 1)])
-    store.save(dense / "bge-m3.npz")
-    scores = ScoreStore()
-    for q in questions:
-        scores.add(q["question"], [c["text"] for c in SOURCES], [2.0, 1.0, 0.0])
-    scores.save(tmp_path / "rerank.json")
-
     answers = {
         ("arm A", "g1"): "لا أعرف إجابة موثوقة عن هذا السؤال.",
         ("arm C", "g1"): "رسوم الوحدة الدراسية للطالب السعودي 250 [1].",
@@ -205,16 +219,70 @@ def test_the_run_answers_with_both_arms_and_measures_them(
 
     run_arms = script("run_arms")
     monkeypatch.setattr(run_arms, "Client", FakeClient)
-    argv = ["--chunks", str(write_lines(tmp_path / "chunks.jsonl", SOURCES))]
-    argv += ["--gold", str(write_lines(tmp_path / "gold.jsonl", questions))]
-    argv += ["--dense", str(dense), "--rerank", str(tmp_path / "rerank.json")]
-    argv += ["--out", str(tmp_path / "runs"), "--show", "1"]
+    argv = stored(tmp_path, {"g1": [2.0, 1.0, 0.0], "g2": [2.0, 1.0, 0.0]})
     assert run_arms.main(argv) == 0
     out = capsys.readouterr().out
     assert "| arm A | 0/1 | - |" in out
     assert "| arm C | 1/1 | 1/1 | 1.00 | 1.00 | 1/1 | 1/1 |" in out
-    saved = [
-        json.loads(line) for line in (tmp_path / "runs" / "C-dev.jsonl").read_text().splitlines()
-    ]
-    assert saved[0]["sources"][0] == "fee" and saved[0]["cited"] == [1]
-    assert saved[1]["declined"] and saved[1]["behavior"] == "refuse"
+    records = saved(tmp_path, "C-dev.jsonl")
+    assert records[0]["sources"][0] == "fee" and records[0]["cited"] == [1]
+    assert records[1]["declined"] and records[1]["behavior"] == "refuse"
+
+
+def test_the_flow_runs_as_an_arm_with_its_retries_and_refusals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: Callable[[str], ModuleType],
+) -> None:
+    # g1 is answered without a citation, then with one. g2's sources score far
+    # below the threshold, so the model is never asked about it.
+    answers = ["رسوم الوحدة الدراسية للطالب السعودي 250.", "رسوم الوحدة 250 [1]."]
+
+    sent: list[Request] = []
+
+    class FakeClient:
+        asked = 0
+
+        def ask(self, asked: Request) -> Reply:
+            sent.append(asked)
+            return Reply(answers[len(sent) - 1], "STOP", "v1", 100, 20, 5, 1.0)
+
+    run_arms = script("run_arms")
+    monkeypatch.setattr(run_arms, "Client", FakeClient)
+    argv = stored(tmp_path, {"g1": [2.0, 1.0, 0.0], "g2": [-6.0, -7.0, -8.0]})
+    assert run_arms.main(["--arms", "flow", *argv]) == 0
+    out = capsys.readouterr().out
+    # answered, cited, precision, recall, numbers, refused, gap named, declined
+    # wrongly, gap on answerable, retried, refused unasked, tokens in and out.
+    assert (
+        "| arm flow | 1/1 | 1/1 | 1.00 | 1.00 | 1/1 | 1/1 | - | 0/1 | 0/1 | 1/2 | 1/2 | 100 | 25 |"
+        in out
+    )
+    assert [asked.purpose for asked in sent] == ["arm C", "arm C"]
+    first, second = saved(tmp_path, "flow-dev.jsonl")
+    assert first["arm"] == "flow" and first["outcome"] == "answered" and first["attempts"] == 2
+    assert first["cited"] == [1] and first["sources"][0] == "fee" and first["numeric_exact"]
+    assert first["tokens_in"] == 200 and first["tokens_out"] == 50 and first["seconds"] == 2.0
+    assert second["outcome"] == "refused" and second["reason"] == "low confidence"
+    assert second["attempts"] == 0 and second["tokens_in"] == 0 and second["finish"] is None
+    assert second["answer"] == DECLINE["ar"] and second["declined"]
+
+
+def test_arms_a_and_c_record_one_attempt_and_no_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    script: Callable[[str], ModuleType],
+) -> None:
+    class FakeClient:
+        asked = 0
+
+        def ask(self, asked: Request) -> Reply:
+            return Reply("رسوم الوحدة 250 [1].", "STOP", "v1", 100, 20, 5, 0.5)
+
+    run_arms = script("run_arms")
+    monkeypatch.setattr(run_arms, "Client", FakeClient)
+    argv = stored(tmp_path, {"g1": [2.0, 1.0, 0.0], "g2": [2.0, 1.0, 0.0]})
+    assert run_arms.main(["--arms", "C", *argv]) == 0
+    for record in saved(tmp_path, "C-dev.jsonl"):
+        assert record["attempts"] == 1 and record["outcome"] is None and record["reason"] is None
