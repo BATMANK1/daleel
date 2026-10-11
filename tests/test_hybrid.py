@@ -17,7 +17,7 @@ import pytest
 from daleel.retrieve.dense import DOCUMENT, QUESTION, VectorStore
 from daleel.retrieve.fusion import rrf
 from daleel.retrieve.hybrid import Hybrid, Search, fusions
-from daleel.retrieve.rerank import ScoreStore, predict, rerank
+from daleel.retrieve.rerank import REFUSE_BELOW, ScoreStore, best_score, predict, rerank
 
 
 def unit(*values: float) -> np.ndarray:
@@ -73,6 +73,18 @@ def test_scores_are_kept_through_a_file_and_refused_where_absent(tmp_path: Path)
         again.score("كم الرسوم؟", ["الغياب", "جديد"])
     with pytest.raises(ValueError, match="1 texts but 2 scores"):
         store.add("q", ["x"], [1.0, 2.0])
+
+
+def test_a_question_s_sources_are_scored_by_the_best_of_them() -> None:
+    asked = []
+
+    def score(question: str, texts: list[str]) -> list[float]:
+        asked.append((question, texts))
+        return [-3.0, 1.5, 0.2]
+
+    sources = [{"text": "x"}, {"text": "y"}, {"text": "z"}]
+    assert best_score(score)("q", sources) == 1.5
+    assert asked == [("q", ["x", "y", "z"])]
 
 
 def test_the_cross_encoder_reads_the_question_with_each_text_and_gives_logits() -> None:
@@ -281,3 +293,37 @@ def test_the_timing_reports_every_row_of_the_table_and_every_stage(
     expected += [row for name in fused for row in (f"RRF: {name}", f"RRF: {name}, reranked")]
     assert rows[2 : 2 + len(expected)] == expected
     assert {"bm25", "encode e5-large-instruct", "rerank BM25 + bge-m3"} <= set(rows)
+
+
+# --- scripts/refusal_threshold.py ---------------------------------------------------
+
+
+def test_the_threshold_is_set_on_dev_one_logit_under_every_question_to_answer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], script: Callable[[str], ModuleType]
+) -> None:
+    questions = [
+        {**GOLD[0], "qid": "g1"},
+        {**GOLD[0], "qid": "g2", "question": "كم تدفع أرامكو؟"},
+        {**GOLD[0], "qid": "g3", "question": "متى يبدأ الفصل؟", "split": "final"},
+    ]
+    questions[1]["answerability_status"] = "outside_corpus"
+    dense = tmp_path / "dense"
+    store = VectorStore()
+    store.add(DOCUMENT, [c["text"] for c in CHUNKS], [unit(0, 1), unit(1, 0), unit(1, -1)])
+    store.add(QUESTION, [q["question"] for q in questions], [unit(1, 0.1)] * 3)
+    store.save(dense / "bge-m3.npz")
+    scores = ScoreStore()
+    # g1 should be answered and scores -2.9 at best; the final question g3, far
+    # lower, must not be read.
+    for question, best in zip(questions, (-2.9, -4.6, -9.0), strict=True):
+        scores.add(question["question"], [c["text"] for c in CHUNKS], [best, best - 1, best - 2])
+    scores.save(tmp_path / "rerank.json")
+    argv = ["--chunks", str(write_lines(tmp_path / "chunks.jsonl", CHUNKS))]
+    argv += ["--gold", str(write_lines(tmp_path / "gold.jsonl", questions))]
+    argv += ["--dense", str(dense), "--rerank", str(tmp_path / "rerank.json")]
+    assert REFUSE_BELOW == -4.0
+    assert script("refusal_threshold").main(argv) == 0
+    out = capsys.readouterr().out
+    assert "2 dev questions" in out
+    assert "| -5.0 | 0/1 | 0/1 |" in out and "| -4.5 | 0/1 | 1/1 |" in out
+    assert "The rule gives -4.0" in out
