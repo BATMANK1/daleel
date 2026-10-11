@@ -57,7 +57,16 @@ def main(argv: list[str] | None = None) -> int:
     for run in args.runs:
         records = [json.loads(line) for line in run.read_text(encoding="utf-8").splitlines()]
         try:
-            found = [{**r, **judge(questions[r["qid"]], r, chunks, client.ask)} for r in records]
+            found = []
+            for r in records:
+                found.append({**r, **judge(questions[r["qid"]], r, chunks, client.ask)})
+                print(
+                    f"{run.stem}: judged {len(found)} of {len(records)}",
+                    end="\r",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            print(file=sys.stderr)
         except QuotaExhaustedError as error:
             print(
                 f"stopped: {error}. Verdicts so far are stored; run again later.", file=sys.stderr

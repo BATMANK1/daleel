@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -294,7 +295,9 @@ class Client:
             if attempt == self.retries or status not in (429, 500, 502, 503, 504):
                 raise LlmError(f"{model.name}: HTTP {status}: {error.get('message', '')[:300]}")
             delay = retry_delay(error) if status == 429 else None
-            self.sleep(delay + 1 if delay is not None else min(60, 2 ** (attempt + 1)))
+            wait = delay + 1 if delay is not None else min(60, 2 ** (attempt + 1))
+            print(f"{model.name}: HTTP {status}, asking again in {wait:.0f} s", file=sys.stderr)
+            self.sleep(wait)
         raise AssertionError("unreachable")
 
     def _log(self, request: Request, reply: Reply) -> None:
