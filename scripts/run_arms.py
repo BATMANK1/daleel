@@ -42,22 +42,11 @@ from daleel.answer.measure import citation_measures, declines, names_gap, states
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.gold import ANSWERABLE, GOLD_V1, SPLITS, behavior, load_gold
 from daleel.eval.retrieval import by_page, evidence
-from daleel.retrieve.bm25 import ChunkIndex
-from daleel.retrieve.dense import DENSE, DenseIndex, VectorStore
-from daleel.retrieve.hybrid import Hybrid
-from daleel.retrieve.rerank import RERANK, RERANK_DEPTH, RERANKER_NAME, ScoreStore
+from daleel.retrieve.dense import DENSE
+from daleel.retrieve.hybrid import chosen_retrieval
+from daleel.retrieve.rerank import RERANK, RERANKER_NAME
 
 RUNS = Path("data/interim/runs")
-
-
-def chosen_retrieval(chunks: list[dict], dense: Path, rerank: Path) -> Hybrid:
-    """T4's chosen configuration, from the stored vectors and scores."""
-    texts = {chunk["chunk_id"]: chunk["text"] for chunk in chunks}
-    bge = DenseIndex(chunks, VectorStore.load(dense / "bge-m3.npz"))
-    scores = ScoreStore.load(rerank)
-    return Hybrid(
-        [ChunkIndex(chunks).search, bge.search], scores.score, texts, rerank_depth=RERANK_DEPTH
-    )
 
 
 def answer_all(

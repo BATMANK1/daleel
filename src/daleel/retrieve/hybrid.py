@@ -10,9 +10,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+from daleel.retrieve.bm25 import ChunkIndex
+from daleel.retrieve.dense import DenseIndex, VectorStore
 from daleel.retrieve.fusion import rrf
-from daleel.retrieve.rerank import RERANK_DEPTH, Scorer, rerank
+from daleel.retrieve.rerank import RERANK_DEPTH, Scorer, ScoreStore, rerank
 
 # How deep each retriever ranks before fusion.
 CANDIDATES = 100
@@ -55,3 +59,14 @@ class Hybrid:
         if self.scorer is not None and self.texts is not None:
             ranked = rerank(question, ranked, self.texts, self.scorer, self.rerank_depth)
         return ranked[:k]
+
+
+def chosen_retrieval(chunks: Sequence[Mapping[str, Any]], dense: Path, rerank: Path) -> Hybrid:
+    """T4's chosen configuration, BM25 and bge-m3 fused and the first 20 reranked,
+    from the stored vectors and scores."""
+    texts = {chunk["chunk_id"]: chunk["text"] for chunk in chunks}
+    bge = DenseIndex(chunks, VectorStore.load(dense / "bge-m3.npz"))
+    scores = ScoreStore.load(rerank)
+    return Hybrid(
+        [ChunkIndex(chunks).search, bge.search], scores.score, texts, rerank_depth=RERANK_DEPTH
+    )

@@ -73,6 +73,20 @@ class ScoreStore:
 
 Scorer = Callable[[str, Sequence[str]], Sequence[float]]
 
+# The best score among a question's sources below which the question is refused
+# without asking the model: one logit under the lowest best score of any dev
+# question that should be answered, as scripts/refusal_threshold.py prints.
+REFUSE_BELOW = -4.0
+
+
+def best_score(score: Scorer) -> Callable[[str, Sequence[Mapping[str, Any]]], float]:
+    """How well a question's sources match it: the cross-encoder's best score among them."""
+
+    def best(question: str, sources: Sequence[Mapping[str, Any]]) -> float:
+        return max(score(question, [source["text"] for source in sources]))
+
+    return best
+
 
 def rerank(
     question: str,
