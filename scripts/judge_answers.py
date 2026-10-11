@@ -23,7 +23,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from daleel.answer.llm import Client, QuotaExhaustedError
+from daleel.answer.llm import Client, LlmError
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.gold import GOLD_V1, load_gold
 from daleel.eval.judge import LABELS, judge
@@ -60,14 +60,9 @@ def main(argv: list[str] | None = None) -> int:
             found = []
             for r in records:
                 found.append({**r, **judge(questions[r["qid"]], r, chunks, client.ask)})
-                print(
-                    f"{run.stem}: judged {len(found)} of {len(records)}",
-                    end="\r",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            print(file=sys.stderr)
-        except QuotaExhaustedError as error:
+                print(f"{run.stem}: judged {len(found)} of {len(records)}", file=sys.stderr)
+        except LlmError as error:
+            # The day's quota, or an error the API kept giving: nothing judged is lost.
             print(
                 f"stopped: {error}. Verdicts so far are stored; run again later.", file=sys.stderr
             )

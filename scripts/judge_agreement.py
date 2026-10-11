@@ -25,7 +25,7 @@ import json
 import sys
 from pathlib import Path
 
-from daleel.answer.llm import JUDGE, Client, QuotaExhaustedError
+from daleel.answer.llm import JUDGE, Client, LlmError
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.agreement import cohen_kappa, confusion
 from daleel.eval.gold import GOLD_V1, load_gold
@@ -83,9 +83,9 @@ def main(argv: list[str] | None = None) -> int:
             record = runs[k["run"]][k["qid"]]
             found = judge(questions[k["qid"]], record, chunks, client.ask)
             judged.append({**k, "human": human[k["item"]], "note": notes[k["item"]], **found})
-            print(f"judged {len(judged)} of {len(key)}", end="\r", file=sys.stderr, flush=True)
-        print(file=sys.stderr)
-    except QuotaExhaustedError as error:
+            print(f"judged {len(judged)} of {len(key)}", file=sys.stderr, flush=True)
+    except LlmError as error:
+        # The day's quota, or an error the API kept giving: nothing judged is lost.
         print(f"stopped: {error}. Verdicts so far are stored; run again later.", file=sys.stderr)
         return 3
     (args.labels / "judged.jsonl").write_text(
