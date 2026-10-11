@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from daleel.retrieve.bm25 import ChunkIndex
 from daleel.retrieve.dense import DenseIndex, VectorStore
 from daleel.retrieve.fusion import rrf
@@ -61,12 +63,27 @@ class Hybrid:
         return ranked[:k]
 
 
-def chosen_retrieval(chunks: Sequence[Mapping[str, Any]], dense: Path, rerank: Path) -> Hybrid:
+def chosen_retrieval(
+    chunks: Sequence[Mapping[str, Any]],
+    dense: Path,
+    rerank: Path,
+    encode_question: Callable[[str], np.ndarray] | None = None,
+    score: Scorer | None = None,
+) -> Hybrid:
     """T4's chosen configuration, BM25 and bge-m3 fused and the first 20 reranked,
-    from the stored vectors and scores."""
+    from the stored vectors and scores.
+
+    A question with no stored vector is encoded by `encode_question`, and one
+    with a chunk to rerank that has no stored score is scored by `score`, where
+    they are given: the models, for questions not asked before.
+    """
     texts = {chunk["chunk_id"]: chunk["text"] for chunk in chunks}
-    bge = DenseIndex(chunks, VectorStore.load(dense / "bge-m3.npz"))
-    scores = ScoreStore.load(rerank)
-    return Hybrid(
-        [ChunkIndex(chunks).search, bge.search], scores.score, texts, rerank_depth=RERANK_DEPTH
-    )
+    bge = DenseIndex(chunks, VectorStore.load(dense / "bge-m3.npz"), encode_question)
+    stored = ScoreStore.load(rerank)
+
+    def scorer(question: str, candidates: Sequence[str]) -> Sequence[float]:
+        if score is not None and stored.missing(question, candidates):
+            return score(question, candidates)
+        return stored.score(question, candidates)
+
+    return Hybrid([ChunkIndex(chunks).search, bge.search], scorer, texts, rerank_depth=RERANK_DEPTH)
