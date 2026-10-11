@@ -14,12 +14,16 @@ is validated against labels made by hand before any arm's result is trusted.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from daleel.answer.arms import source_block
-from daleel.answer.llm import JUDGE, Request
+from daleel.answer.llm import JUDGE, Reply, Request
 from daleel.eval.gold import fragments
+
+# Where answers drawn for labelling by hand, and their labels, are kept.
+HAND_LABELS = Path("data/interim/labels")
 
 # Each label and when it applies. The person labelling by hand reads these
 # same words.
@@ -131,3 +135,28 @@ def verdict(text: str) -> str | None:
     """The label on the judge's last VERDICT line, or None if it gave none."""
     found = _VERDICT.findall(text)
     return found[-1].lower() if found else None
+
+
+def judge(
+    question: Mapping[str, Any],
+    record: Mapping[str, Any],
+    chunks: Mapping[str, Mapping[str, Any]],
+    ask: Callable[[Request], Reply],
+    model: str = JUDGE,
+) -> dict[str, Any]:
+    """The judge's label for one answer, with its reasoning, as fields to add to
+    the answer's record. The label is None where the judge gave no verdict."""
+    reply = ask(judge_request(question, record, chunks, model))
+    return {
+        "judge": verdict(reply.text),
+        "judge_reasoning": reply.text,
+        "judge_finish": reply.finish,
+        "judge_model": reply.model_version,
+    }
+
+
+def hand_label(text: str) -> str | None:
+    """A label as a person writes it, in full or by its first letter, in any case;
+    None if it is none of the labels."""
+    word = text.strip().lower()
+    return next((label for label in LABELS if word in (label, label[0])), None) if word else None

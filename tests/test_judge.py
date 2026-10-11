@@ -1,4 +1,4 @@
-"""Tests for the judge's request and verdict, and for drawing answers to label."""
+"""Tests for the judge, for drawing answers to label, and for the judge's runs."""
 
 from __future__ import annotations
 
@@ -8,8 +8,19 @@ from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
-from daleel.answer.llm import JUDGE
-from daleel.eval.judge import LABELS, RUBRIC, case, evidence, judge_request, verdict
+import pytest
+
+from daleel.answer.llm import JUDGE, Reply, Request
+from daleel.eval.judge import (
+    LABELS,
+    RUBRIC,
+    case,
+    evidence,
+    hand_label,
+    judge,
+    judge_request,
+    verdict,
+)
 
 GUIDE = "student_guide_2025"
 CHUNKS = {
@@ -84,6 +95,26 @@ def test_the_verdict_is_the_last_one_given_in_any_case_or_markup() -> None:
     assert verdict("VERDICT: mostly right") is None
 
 
+def test_a_judged_answer_carries_the_label_and_the_reasoning() -> None:
+    def ask(asked: Request) -> Reply:
+        assert asked.purpose == "judge"
+        return Reply("Points: the fee. VERDICT: correct", "STOP", "gemma-v", 900, 40, 0, 2.0)
+
+    found = judge(question(), record("الرسوم 250 [1].", [1], ["fee"]), CHUNKS, ask)
+    assert found == {
+        "judge": "correct",
+        "judge_reasoning": "Points: the fee. VERDICT: correct",
+        "judge_finish": "STOP",
+        "judge_model": "gemma-v",
+    }
+
+
+def test_a_hand_label_is_read_in_full_or_by_its_first_letter() -> None:
+    assert hand_label(" Correct ") == "correct" and hand_label("H") == "hallucinated"
+    assert hand_label("p") == "partial" and hand_label("i") == "incorrect"
+    assert hand_label("") is None and hand_label("right") is None
+
+
 # --- scripts/draw_labels.py ---------------------------------------------------------
 
 
@@ -130,3 +161,140 @@ def test_the_draw_takes_each_arm_equally_hides_the_arm_and_can_be_made_again(
         assert list(csv.reader(file))[:2] == [["item", "label", "note"], ["1", "", ""]]
     for name in ("sheet.html", "labels.csv", "key.jsonl"):
         assert (tmp_path / "one" / name).read_bytes() == (tmp_path / "two" / name).read_bytes()
+
+
+# --- scripts/judge_agreement.py and scripts/judge_answers.py ------------------------
+
+VERDICTS = {
+    "answer g1": "VERDICT: correct",
+    "answer g2": "Some reasoning.\nVERDICT: partial",
+    "answer g3": "I cannot decide.",
+    "invented g1": "VERDICT: hallucinated",
+    "invented g2": "VERDICT: incorrect",
+    "invented g3": "**VERDICT:** hallucinated",
+}
+
+
+class FakeJudge:
+    asked = 0
+
+    def ask(self, asked: Request) -> Reply:
+        FakeJudge.asked += 1
+        answer = asked.prompt.rsplit("<answer>\n", 1)[1].split("\n</answer>")[0]
+        return Reply(VERDICTS[answer], "STOP", "gemma-v", 900, 40, 0, 2.0)
+
+
+def judged_files(tmp_path: Path) -> list[str]:
+    gold = [
+        question("g1", type="numeric"),
+        question("g2", type="numeric"),
+        {**question("g3", "outside_corpus", refs=[]), "type": "out_of_scope"},
+    ]
+    behaviors = {"g1": "answer", "g2": "answer", "g3": "refuse"}
+    for q in gold:
+        q.setdefault("type", "numeric")
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for arm, prefix in (("A", "invented"), ("flow", "answer")):
+        rows = [
+            record(
+                f"{prefix} {q['qid']}",
+                [],
+                [],
+                qid=q["qid"],
+                arm=arm,
+                type=q["type"],
+                behavior=behaviors[q["qid"]],
+            )
+            for q in gold
+        ]
+        write_lines(runs / f"{arm}-dev.jsonl", rows)
+    argv = ["--chunks", str(write_lines(tmp_path / "chunks.jsonl", list(CHUNKS.values())))]
+    return [*argv, "--gold", str(write_lines(tmp_path / "gold.jsonl", gold))]
+
+
+def write_sheet(folder: Path, labels: list[str], key: list[tuple[str, str]]) -> None:
+    folder.mkdir(exist_ok=True)
+    with (folder / "labels.csv").open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["item", "label", "note"])
+        writer.writerows(
+            [n, label, "hard one" if n == 2 else ""] for n, label in enumerate(labels, 1)
+        )
+    write_lines(
+        folder / "key.jsonl",
+        [
+            {"item": n, "run": f"{arm}-dev.jsonl", "arm": arm, "qid": qid}
+            for n, (arm, qid) in enumerate(key, 1)
+        ],
+    )
+
+
+def test_t9_puts_the_hand_labels_against_the_judge_and_lists_where_they_differ(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: Callable[[str], ModuleType],
+) -> None:
+    argv = judged_files(tmp_path)
+    key = [("flow", "g1"), ("flow", "g2"), ("A", "g1"), ("flow", "g3"), ("A", "g3")]
+    write_sheet(tmp_path / "labels", ["C", "correct", "h", "incorrect", "hallucinated"], key)
+    judge_agreement = script("judge_agreement")
+    monkeypatch.setattr(judge_agreement, "Client", FakeJudge)
+    argv += ["--labels", str(tmp_path / "labels"), "--runs", str(tmp_path / "runs")]
+    assert judge_agreement.main(argv) == 0
+    out = capsys.readouterr().out
+    # Item 4 got no verdict, so four answers are compared.
+    assert "| 4 answers | judge: correct | judge: partial |" in out
+    assert "| human: correct | 1 | 1 | 0 | 0 |" in out
+    assert "| human: hallucinated | 0 | 0 | 0 | 2 |" in out
+    assert "the labels agree on 3 of 4" in out and "1 answers had no verdict" in out
+    assert "arm A: agree on 2 of 2" in out and "arm flow: agree on 1 of 2" in out
+    assert "- item 2 (g2, arm flow): human correct, judge partial. Note: hard one" in out
+    assert "- item 4 (g3, arm flow): human incorrect, judge None" in out
+    saved = [json.loads(line) for line in (tmp_path / "labels" / "judged.jsonl").open()]
+    assert [s["judge"] for s in saved] == [
+        "correct",
+        "partial",
+        "hallucinated",
+        None,
+        "hallucinated",
+    ]
+
+
+def test_t9_waits_until_every_answer_is_labelled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: Callable[[str], ModuleType],
+) -> None:
+    argv = judged_files(tmp_path)
+    write_sheet(tmp_path / "labels", ["correct", "", "maybe"], [("flow", "g1")] * 3)
+    judge_agreement = script("judge_agreement")
+    FakeJudge.asked = 0
+    monkeypatch.setattr(judge_agreement, "Client", FakeJudge)
+    argv += ["--labels", str(tmp_path / "labels"), "--runs", str(tmp_path / "runs")]
+    assert judge_agreement.main(argv) == 4
+    err = capsys.readouterr().err
+    assert "item 2: ''" in err and "item 3: 'maybe'" in err and FakeJudge.asked == 0
+
+
+def test_a_judged_run_counts_each_label_overall_and_by_type(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: Callable[[str], ModuleType],
+) -> None:
+    argv = judged_files(tmp_path)
+    judge_answers = script("judge_answers")
+    monkeypatch.setattr(judge_answers, "Client", FakeJudge)
+    runs = [str(tmp_path / "runs" / "A-dev.jsonl"), str(tmp_path / "runs" / "flow-dev.jsonl")]
+    assert judge_answers.main([*argv, "--runs", *runs]) == 0
+    out = capsys.readouterr().out
+    # answers, correct, partial, incorrect, hallucinated, no verdict, accuracy, invented
+    # outside the corpus.
+    assert "| A-dev | 3 | 0 | 0 | 1 | 2 | 0 | 0.00 | 1/1 |" in out
+    assert "| flow-dev | 3 | 1 | 1 | 0 | 0 | 1 | 0.33 | 0/1 |" in out
+    assert "| numeric | 2 | 1 | 1 | 0 | 0 | 0 |" in out
+    saved = [json.loads(line) for line in (tmp_path / "runs" / "flow-dev-judged.jsonl").open()]
+    assert [s["judge"] for s in saved] == ["correct", "partial", None]
