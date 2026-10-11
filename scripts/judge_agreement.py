@@ -25,11 +25,11 @@ import json
 import sys
 from pathlib import Path
 
-from daleel.answer.llm import Client, QuotaExhaustedError
+from daleel.answer.llm import JUDGE, Client, QuotaExhaustedError
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.agreement import cohen_kappa, confusion
 from daleel.eval.gold import GOLD_V1, load_gold
-from daleel.eval.judge import HAND_LABELS, LABELS, hand_label, judge
+from daleel.eval.judge import HAND_LABELS, LABELS, RUBRIC_VERSION, hand_label, judge
 
 RUNS = Path("data/interim/runs")
 
@@ -83,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
             record = runs[k["run"]][k["qid"]]
             found = judge(questions[k["qid"]], record, chunks, client.ask)
             judged.append({**k, "human": human[k["item"]], "note": notes[k["item"]], **found})
+            print(f"judged {len(judged)} of {len(key)}", end="\r", file=sys.stderr, flush=True)
+        print(file=sys.stderr)
     except QuotaExhaustedError as error:
         print(f"stopped: {error}. Verdicts so far are stored; run again later.", file=sys.stderr)
         return 3
@@ -100,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     agree = sum(j["human"] == j["judge"] for j in pairs)
     kappa = cohen_kappa([j["human"] for j in pairs], [j["judge"] for j in pairs], order)
     print(f"\nCohen's kappa {kappa:.2f}; the labels agree on {agree} of {len(pairs)}.")
+    print(f"Judge {JUDGE}, rubric {RUBRIC_VERSION}.")
     if len(pairs) < len(judged):
         print(f"{len(judged) - len(pairs)} answers had no verdict from the judge.")
     for arm in sorted({j["arm"] for j in pairs}):

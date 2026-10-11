@@ -12,8 +12,10 @@ import pytest
 
 from daleel.answer.llm import JUDGE, Reply, Request
 from daleel.eval.judge import (
+    JUDGE_TOKENS,
     LABELS,
     RUBRIC,
+    RUBRIC_VERSION,
     case,
     evidence,
     hand_label,
@@ -69,6 +71,7 @@ def test_the_judge_reads_the_reference_the_evidence_and_what_the_answer_cites() 
     answer = "الرسوم 250 [2]."
     asked = judge_request(question(), record(answer, [2], ["gpa", "fee"]), CHUNKS)
     assert asked.model == JUDGE and asked.temperature == 0.0 and asked.purpose == "judge"
+    assert asked.max_tokens == JUDGE_TOKENS
     assert asked.system == "" and asked.prompt.startswith(RUBRIC)
     for label in LABELS:
         assert f"- {label}: " in asked.prompt
@@ -103,6 +106,7 @@ def test_a_judged_answer_carries_the_label_and_the_reasoning() -> None:
     found = judge(question(), record("الرسوم 250 [1].", [1], ["fee"]), CHUNKS, ask)
     assert found == {
         "judge": "correct",
+        "judge_rubric": RUBRIC_VERSION,
         "judge_reasoning": "Points: the fee. VERDICT: correct",
         "judge_finish": "STOP",
         "judge_model": "gemma-v",
@@ -249,6 +253,7 @@ def test_t9_puts_the_hand_labels_against_the_judge_and_lists_where_they_differ(
     assert "| human: correct | 1 | 1 | 0 | 0 |" in out
     assert "| human: hallucinated | 0 | 0 | 0 | 2 |" in out
     assert "the labels agree on 3 of 4" in out and "1 answers had no verdict" in out
+    assert f"Judge {JUDGE}, rubric {RUBRIC_VERSION}." in out
     assert "arm A: agree on 2 of 2" in out and "arm flow: agree on 1 of 2" in out
     assert "- item 2 (g2, arm flow): human correct, judge partial. Note: hard one" in out
     assert "- item 4 (g3, arm flow): human incorrect, judge None" in out

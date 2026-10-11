@@ -155,9 +155,12 @@ def test_a_refusal_for_the_day_stops_the_run(tmp_path: Path) -> None:
     assert not list((tmp_path / "llm").rglob("*.json"))
 
 
-def test_the_api_s_own_errors_are_retried_and_others_are_not(tmp_path: Path) -> None:
+def test_the_api_s_own_errors_are_retried_and_others_are_not(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     api = FakeApi((500, refusal(500, "Internal error encountered.")), (200, answer("الرياض")))
     assert client(tmp_path, api).ask(QUESTION).text == "الرياض"
+    assert f"{QUESTION.model}: HTTP 500, asking again in 2 s" in capsys.readouterr().err
     with pytest.raises(LlmError, match="HTTP 400"):
         client(tmp_path, FakeApi((400, refusal(400, "Invalid argument")))).ask(
             Request(QUESTION.model, "سؤال آخر")

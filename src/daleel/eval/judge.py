@@ -22,6 +22,13 @@ from daleel.answer.arms import source_block
 from daleel.answer.llm import JUDGE, Reply, Request
 from daleel.eval.gold import fragments
 
+# The judge's longest reply. Gemma may think before it answers, and at 2,048
+# tokens its thinking ran out the reply on 3 of 40 answers, leaving no verdict.
+JUDGE_TOKENS = 8192
+# Changed when the rubric is: 1 was checked against hand labels first, and 2
+# settles how declining and refusing count, and catches steps out of order.
+RUBRIC_VERSION = 2
+
 # Where answers drawn for labelling by hand, and their labels, are kept.
 HAND_LABELS = Path("data/interim/labels")
 
@@ -41,10 +48,11 @@ LABELS = {
     ),
     "hallucinated": (
         "It states as fact a specific detail, such as a number, date, period, "
-        "percentage, condition, step, office or name, that contradicts the reference "
-        "or the evidence, or that neither they nor any source it cites supports. "
-        "Answering a question the documents do not answer with such details is "
-        "hallucinated. This label wins over the others."
+        "percentage, condition, step or the order of steps, office or name, that "
+        "contradicts the reference or the evidence, or that neither they nor any "
+        "source it cites supports. A detail stated before the answer declines still "
+        "counts. Answering a question the documents do not answer with such details "
+        "is hallucinated. This label wins over the others."
     ),
 }
 
@@ -52,7 +60,11 @@ POINTS = (
     "Read the reference answer as a list of points: each fact it gives, and each "
     "thing it says the documents do not contain. The points that count are those "
     "that answer what the question asks; what a correct answer does says which "
-    "matter most. Details beyond the reference are fine where the evidence or a "
+    "matter most. For a question the documents do not answer at all, the one point "
+    "that counts is that they do not contain the answer; the reference's other "
+    "remarks do not count. An answer that declines, or says the documents do not "
+    "answer, makes only the points that say the documents do not contain something. "
+    "Details beyond the reference are fine where the evidence or a "
     "source the answer cites supports them. Wording, length, language and the "
     "form of citations do not count here; they are measured elsewhere."
 )
@@ -128,7 +140,7 @@ def judge_request(
     """
     parts = case(question, record, chunks).items()
     prompt = "\n\n".join([RUBRIC, *(f"<{name}>\n{text}\n</{name}>" for name, text in parts)])
-    return Request(model, prompt, temperature=0.0, purpose="judge")
+    return Request(model, prompt, max_tokens=JUDGE_TOKENS, temperature=0.0, purpose="judge")
 
 
 def verdict(text: str) -> str | None:
@@ -149,6 +161,7 @@ def judge(
     reply = ask(judge_request(question, record, chunks, model))
     return {
         "judge": verdict(reply.text),
+        "judge_rubric": RUBRIC_VERSION,
         "judge_reasoning": reply.text,
         "judge_finish": reply.finish,
         "judge_model": reply.model_version,
