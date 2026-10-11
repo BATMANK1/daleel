@@ -429,6 +429,8 @@ python3 scripts/time_retrieval.py --dense bge-m3  # time each stage per question
 python3 scripts/ask_llm.py "سؤال"                 # one question to the answering model, stored for reruns
 python3 scripts/run_arms.py --arms A C            # arms A and C on the dev questions, measured without a judge
 python3 scripts/draw_labels.py --runs <files>     # answers to label by hand, blind to the arm, for T9
+python3 scripts/judge_agreement.py                # table T9: the judge against your hand labels
+python3 scripts/judge_answers.py --runs <files>   # the judge's label for every answer of a run
 python3 scripts/refusal_threshold.py              # where to refuse without asking the model, set on dev
 python3 scripts/eval_rewrite.py                   # whether rewriting questions finds more evidence, on dev
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth

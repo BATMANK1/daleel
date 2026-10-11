@@ -33,9 +33,8 @@ from pathlib import Path
 
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.gold import GOLD_V1, load_gold
-from daleel.eval.judge import LABELS, POINTS, case
+from daleel.eval.judge import HAND_LABELS, LABELS, POINTS, case
 
-LABELLED = Path("data/interim/labels")
 SEED = 1448
 
 STYLE = """
@@ -95,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--chunks", type=Path, default=CHUNKS)
     parser.add_argument("--gold", type=Path, default=GOLD_V1)
-    parser.add_argument("--out", type=Path, default=LABELLED)
+    parser.add_argument("--out", type=Path, default=HAND_LABELS)
     args = parser.parse_args(argv)
     for path in (*args.runs, args.chunks, args.gold):
         if not path.exists():
