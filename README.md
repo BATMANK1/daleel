@@ -428,6 +428,7 @@ python3 scripts/eval_hybrid.py                    # table T4: the encoders, fusi
 python3 scripts/time_retrieval.py --dense bge-m3  # time each stage per question; --rerank adds the reranker
 python3 scripts/ask_llm.py "سؤال"                 # one question to the answering model, stored for reruns
 python3 scripts/run_arms.py --arms A C            # arms A and C on the dev questions, measured without a judge
+python3 scripts/run_arms.py --arms B              # arm B: the whole corpus with every question
 python3 scripts/draw_labels.py --runs <files>     # answers to label by hand, blind to the arm, for T9
 python3 scripts/judge_agreement.py                # table T9: the judge against your hand labels
 python3 scripts/judge_answers.py --runs <files>   # the judge's label for every answer of a run

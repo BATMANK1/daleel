@@ -5,10 +5,12 @@ of the retrieval measured in table T4, numbered [1] to [5], each with its
 document, the document's date and whom it governs, the page and the section,
 and asks for an answer that cites them by number. The code, not the model,
 turns those numbers back into chunks, so a page number in an answer is never
-the model's own.
+the model's own. Arm B asks as arm C does, but gives every chunk of the corpus
+as a source, so that B and C differ only in what the model reads.
 
-Both arms decline with a fixed sentence, and arm C names what its sources
-leave out with a fixed opening, so that both can be counted without a judge.
+Every arm declines with a fixed sentence, and arms B and C name what their
+sources leave out with a fixed opening, so that both can be counted without a
+judge.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from daleel.answer.llm import GENERATOR, Request
 from daleel.corpus import COMMISSION, YANBU
 from daleel.normalize.arabic import remove_tatweel
 
-ARMS = ("A", "C")
+ARMS = ("A", "B", "C")
 # How many of the reranked chunks reach the model.
 SOURCES = 5
 
@@ -139,10 +141,10 @@ def request(
     """What an arm asks the model about one question."""
     if arm == "A":
         return Request(model, f"Question: {question}", system=SYSTEM_A, purpose="arm A")
-    if arm == "C":
+    if arm in ("B", "C"):
         blocks = "\n".join(source_block(n, chunk) for n, chunk in enumerate(sources, start=1))
         prompt = f"<sources>\n{blocks}\n</sources>\n\nQuestion: {question}"
-        return Request(model, prompt, system=SYSTEM_C, purpose="arm C")
+        return Request(model, prompt, system=SYSTEM_C, purpose=f"arm {arm}")
     raise ValueError(f"no arm {arm!r}; the arms are {', '.join(ARMS)}")
 
 
