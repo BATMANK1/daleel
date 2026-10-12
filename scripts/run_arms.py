@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""Answer the gold set with arms A, C and flow, and measure what needs no judge.
+"""Answer the gold set with arms A, B, C and flow, and measure what needs no judge.
 
     python3 scripts/run_arms.py --arms C flow [--split dev] [--show 5] [options]
-Arm C's sources are the first five chunks of the retrieval chosen in table T4
-(BM25 + bge-m3 fused, the first 20 reranked), computed from the vectors and
+
+Arm B's sources are every chunk of the corpus, so each of its questions
+sends the whole corpus; it runs only when named in --arms. Arm C's sources
+are the first five chunks of the retrieval chosen in table T4 (BM25 + bge-m3
+fused, the first 20 reranked), computed from the vectors and
 reranker scores stored in data/interim/, so no GPU is needed. The flow arm
 uses the same retrieval, with a confidence gate, citation checks and an
 optional second attempt using ten sources. Each answer is asked through
 daleel.answer.llm, which stores it, so a second run, or a run stopped by the
 day's quota, asks only what is new. The answers go to
 data/interim/runs/<arm>-<split>[-<tag>].jsonl.
+
 Prints one row per arm:
 - answered: the share of answerable questions it did not decline, either in
   the fixed words or by saying only what the documents leave out, citing
   nothing;
 - cited: the share of its answers to them with citations, all naming a source;
-- precision, recall: of its citations against the gold evidence (C and flow);
+- precision, recall: of its citations against the gold evidence (B, C, flow);
 - numbers: numeric questions whose number it states exactly;
 - refused: outside-corpus questions it declined;
 - gap named: questions the corpus answers in part, answered with the gap named;
@@ -81,11 +85,12 @@ def answer_all(
             outcome = state["outcome"]
             reason = state["reason"]
         else:
-            sources = (
-                [by_id[cid] for cid in retrieval.search(question["question"], SOURCES)]
-                if arm == "C"
-                else []
-            )
+            if arm == "B":
+                sources = list(chunks)
+            elif arm == "C":
+                sources = [by_id[cid] for cid in retrieval.search(question["question"], SOURCES)]
+            else:
+                sources = []
             reply = client.ask(request(arm, question["question"], sources))
             text = reply.text
             replies = [reply]
@@ -182,7 +187,13 @@ def summarize(records: list[dict]) -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Answer gold questions with arms A, C and flow.")
-    parser.add_argument("--arms", nargs="+", choices=RUNNABLE, default=list(ARMS))
+    parser.add_argument(
+        "--arms",
+        nargs="+",
+        choices=RUNNABLE,
+        default=["A", "C"],
+        help="arm B sends the whole corpus with every question, so it runs only when named",
+    )
     parser.add_argument("--split", choices=SPLITS, default="dev")
     parser.add_argument("--limit", type=int, default=None, help="only the first N questions")
     parser.add_argument("--show", type=int, default=5, help="answers to print for reading")

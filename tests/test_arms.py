@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from daleel.answer.arms import (
+    ARMS,
     DECLINE,
     GAP,
     SYSTEM_A,
@@ -95,8 +96,15 @@ def test_arm_a_asks_without_sources_and_says_how_to_decline() -> None:
     asked = request("A", "كم الرسوم؟")
     assert asked.system == SYSTEM_A and "<source" not in asked.prompt
     assert UNKNOWN["ar"] in SYSTEM_A and DECLINE["ar"] in SYSTEM_C and GAP["en"] in SYSTEM_C
-    with pytest.raises(ValueError, match="no arm 'B'"):
-        request("B", "q")
+    with pytest.raises(ValueError, match="no arm 'D'"):
+        request("D", "q")
+
+
+def test_arm_b_reads_every_source_it_is_given_as_arm_c_does() -> None:
+    asked = request("B", "كم الرسوم؟", SOURCES)
+    assert asked.system == SYSTEM_C and asked.purpose == "arm B" and asked.model == GENERATOR
+    assert asked.prompt == request("C", "كم الرسوم؟", SOURCES).prompt
+    assert ARMS == ("A", "B", "C")
 
 
 def test_citations_are_read_in_either_script_and_in_lists() -> None:
@@ -267,6 +275,37 @@ def test_the_flow_runs_as_an_arm_with_its_retries_and_refusals(
     assert second["outcome"] == "refused" and second["reason"] == "low confidence"
     assert second["attempts"] == 0 and second["tokens_in"] == 0 and second["finish"] is None
     assert second["answer"] == DECLINE["ar"] and second["declined"]
+
+
+def test_arm_b_is_given_the_whole_corpus_and_measured_like_arm_c(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: Callable[[str], ModuleType],
+) -> None:
+    sent: list[Request] = []
+
+    class FakeClient:
+        asked = 0
+
+        def ask(self, asked: Request) -> Reply:
+            sent.append(asked)
+            fee = "الوحدة" in asked.prompt.rsplit("Question: ", 1)[1]
+            text = "رسوم الوحدة 250 [1]." if fee else "لا تجيب الوثائق المتاحة عن هذا السؤال."
+            return Reply(text, "STOP", "v1", 150_000, 20, 5, 9.0)
+
+    run_arms = script("run_arms")
+    monkeypatch.setattr(run_arms, "Client", FakeClient)
+    # The retrieval would rank the fee last; arm B is given every chunk regardless.
+    argv = stored(tmp_path, {"g1": [0.0, 1.0, 2.0], "g2": [2.0, 1.0, 0.0]})
+    assert run_arms.main(["--arms", "B", *argv]) == 0
+    out = capsys.readouterr().out
+    assert "| arm B | 1/1 | 1/1 | 1.00 | 1.00 | 1/1 | 1/1 |" in out
+    assert [asked.purpose for asked in sent] == ["arm B", "arm B"]
+    assert all(asked.prompt.count("<source n=") == len(SOURCES) for asked in sent)
+    first, _ = saved(tmp_path, "B-dev.jsonl")
+    assert first["sources"] == [chunk["chunk_id"] for chunk in SOURCES] and first["cited"] == [1]
+    assert first["tokens_in"] == 150_000
 
 
 def test_arms_a_and_c_record_one_attempt_and_no_outcome(
