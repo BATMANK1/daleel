@@ -1,12 +1,11 @@
 # Judge agreement (T9)
 
-The judge, Gemma 4 31B with rubric 2, gives the same label as a person on 37
-of 40 answers: Cohen's kappa 0.89, with a 95% bootstrap interval of 0.76 to
-1.00. Rubric 2 was written after reading where rubric 1 disagreed on these
-same 40 answers, so that figure is optimistic. Rubric 1, written before any
-answer was labelled, gave kappa 0.65 (0.43 to 0.84) on 37. A check on
-answers that played no part in writing the rubric is still to come (last
-section).
+The judge, Gemma 4 31B with rubric 2, gives the same label as a person on 56
+of 60 answers: Cohen's kappa 0.90, with a 95% bootstrap interval of 0.78 to
+0.98. On the 20 answers of arm B that played no part in writing the rubric,
+it agrees on 19. Rubric 2 was written after reading where rubric 1 disagreed
+on the first 40 answers; rubric 1, written before any answer was labelled,
+gave kappa 0.65 (0.43 to 0.84) on 37.
 
 ## Setup
 
@@ -98,8 +97,35 @@ answers took about an hour, through four runs, because the free tier's
 Gemma 31B often answers 500 or 503 ("high demand"). The client asks again
 after a pause, and a run that stops keeps every verdict it got.
 
-## Still to do
+## A fresh check on arm B
 
-Check rubric 2 on answers that played no part in writing it: 20 answers of
-arm B, drawn the same way once arm B is run, labelled by hand before the
-judge sees them.
+Rubric 2 was then checked on 20 answers of arm B, which played no part in
+writing it. They were drawn by `scripts/draw_labels.py --seed 1449`, so that 9
+of the 11 plain questions differ from those above; the 9 questions that are
+not plain answers are the only ones dev has, and repeat. They were labelled by
+hand on 12 October 2026, before the judge's labels were seen.
+
+| 20 answers | judge: correct | judge: partial | judge: incorrect | judge: hallucinated |
+|---|---|---|---|---|
+| human: correct | 16 | 1 | 0 | 0 |
+| human: partial | 0 | 2 | 0 | 0 |
+| human: incorrect | 0 | 0 | 1 | 0 |
+| human: hallucinated | 0 | 0 | 0 | 0 |
+
+The labels agree on 19 of 20, kappa 0.83. The hand labels were 17 correct, 2
+partial and 1 incorrect, so few of these answers test the labels that are hard
+to tell apart, and a bootstrap interval for kappa on them spans almost the
+whole range. The agreement, 19 of 20, and 8 of the 9 answers to questions that
+are not plain answers, is the clearer figure.
+
+The one disagreement is again a decline of a question the documents answer in
+part, now the other way round: on g071 arm B names the missing figure, which
+the hand label calls correct and the judge partial, for leaving out the
+general rule that applicants compete by grade point average.
+
+Such declines are where both labellers are least steady. Arm B's bare
+decline of g069 was labelled correct by hand, reading rubric 2's sheet, where
+on the first sheet arm A's bare decline of the same question had been
+partial; the judge, with rubric 2 both times, gave arm A's partial and arm
+B's correct. Only 4 of the 60 dev questions ask for an answer with its gap
+named, so this unsteadiness moves an arm's accuracy by at most 0.07.
