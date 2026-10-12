@@ -432,6 +432,7 @@ python3 scripts/run_arms.py --arms B              # arm B: the whole corpus with
 python3 scripts/draw_labels.py --runs <files>     # answers to label by hand, blind to the arm, for T9
 python3 scripts/judge_agreement.py                # table T9: the judge against your hand labels
 python3 scripts/judge_answers.py --runs <files>   # the judge's label for every answer of a run
+python3 scripts/results.py --runs <judged files>  # tables T5, T7 and T8, with bootstrap intervals
 python3 scripts/refusal_threshold.py              # where to refuse without asking the model, set on dev
 python3 scripts/eval_rewrite.py                   # whether rewriting questions finds more evidence, on dev
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
