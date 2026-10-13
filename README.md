@@ -522,7 +522,9 @@ numbers, once its arms have run.
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The page's fonts, IBM Plex Sans Arabic and Noto Naskh
+Arabic, are under the SIL Open Font License 1.1, with their licences in
+[`src/daleel/serve/static/fonts/`](src/daleel/serve/static/fonts/).
 
 ## Source documents
 

@@ -21,6 +21,7 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -173,6 +174,8 @@ def create_app(
         )
 
     app = FastAPI(title="Daleel", summary="Cited answers from RCJY college regulations")
+    # The page's fonts, served from here so that the page loads nothing from other sites.
+    app.mount("/static", StaticFiles(directory=PAGE.parent), name="static")
 
     @app.get("/", include_in_schema=False)
     def page() -> FileResponse:

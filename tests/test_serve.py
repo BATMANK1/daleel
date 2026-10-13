@@ -322,6 +322,16 @@ def test_the_page_is_arabic_right_to_left_and_says_what_daleel_is() -> None:
     assert "://" not in response.text
 
 
+def test_the_page_s_fonts_are_served_from_this_server() -> None:
+    client = service(Model())
+    fonts = re.findall(r'url\("(/static/fonts/[^"]+)"\)', client.get("/").text)
+    assert len(fonts) >= 4
+    for font in fonts:
+        response = client.get(font)
+        assert response.status_code == 200, font
+        assert response.headers["content-type"] == "font/woff2"
+
+
 def sources_of(found: Sequence[tuple[str, dict]]) -> list[Mapping[str, Any]]:
     return next(data for name, data in found if name == "answer")["sources"]
 
