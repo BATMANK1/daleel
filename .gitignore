@@ -4,6 +4,8 @@ data/raw/*
 data/interim/
 data/processed/
 data/external/
+# What the web service keeps: the query log and the model's stored replies
+data/serve/
 
 # Secrets
 .env

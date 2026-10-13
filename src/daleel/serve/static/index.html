@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>دليل</title>
+<style>
+  /* System fonts only: the page loads nothing from any other site. */
+  :root {
+    --paper: #f3f6f7;
+    --sheet: #ffffff;
+    --ink: #16243a;
+    --muted: #586879;
+    --rule: #d3dce2;
+    --action: #0d6b6b;
+    --action-ink: #ffffff;
+    --mark: #ffe27a;
+    --mark-soft: #fff4c4;
+    --warn: #8a3b12;
+    --naskh: "Noto Naskh Arabic", "Traditional Arabic", "Times New Roman", serif;
+    --sans: "Noto Sans Arabic", "Segoe UI", Tahoma, "Geeza Pro", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1922;
+      --sheet: #15232e;
+      --ink: #e4ecf1;
+      --muted: #9aaab7;
+      --rule: #2a3b48;
+      --action: #4fb0ad;
+      --action-ink: #0e1922;
+      --mark: #8a7424;
+      --mark-soft: #3a3418;
+      --warn: #f0a77c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 18px/1.8 var(--sans);
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+
+  .name {
+    margin: 0;
+    font: 700 3rem/1.2 var(--naskh);
+  }
+  .lead { margin: 0.25rem 0 1.5rem; color: var(--muted); }
+  .notice {
+    margin: 0 0 2rem;
+    padding: 0.75rem 1rem;
+    border-inline-start: 4px solid var(--action);
+    background: var(--sheet);
+    font-size: 0.89rem;
+    line-height: 1.7;
+  }
+  .notice p { margin: 0; }
+  .notice p + p { margin-top: 0.35rem; color: var(--muted); }
+
+  form { display: grid; gap: 0.75rem; }
+  label { font-weight: 700; }
+  textarea {
+    width: 100%;
+    min-height: 6rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--sheet);
+    color: var(--ink);
+    font: inherit;
+    resize: vertical;
+  }
+  .row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+  .ask {
+    padding: 0.5rem 2rem;
+    border: 0;
+    border-radius: 6px;
+    background: var(--action);
+    color: var(--action-ink);
+    font-weight: 700;
+  }
+  .ask:disabled { opacity: 0.55; cursor: wait; }
+  .count { color: var(--muted); font-size: 0.83rem; }
+  :focus-visible { outline: 3px solid var(--action); outline-offset: 2px; }
+
+  .try { margin: 2rem 0 0; }
+  .try p { margin: 0 0 0.5rem; color: var(--muted); }
+  .examples { margin: 0; padding: 0; list-style: none; }
+  .examples li + li { margin-top: 0.35rem; }
+  .example {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--action);
+    text-align: start;
+    text-decoration: underline;
+    text-underline-offset: 0.3em;
+  }
+
+  .status { min-height: 1.8em; margin: 1.5rem 0 0; color: var(--muted); }
+  .answer { margin-top: 0.5rem; }
+  .answer p { margin: 0 0 0.75rem; }
+  .answer ul { margin: 0 0 0.75rem; padding-inline-start: 1.25rem; }
+  .answer.declined { color: var(--muted); }
+  .error { color: var(--warn); }
+  .cite {
+    margin: 0 0.1em;
+    padding: 0 0.35em;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--mark-soft);
+    color: var(--ink);
+    font-size: 0.78em;
+    line-height: 1.4;
+    vertical-align: 0.2em;
+  }
+  .next { color: var(--muted); font-size: 0.89rem; }
+
+  .sources { margin: 2rem 0 0; }
+  .slips { margin: 0; padding: 0; list-style: none; }
+  .sources h2 { margin: 0 0 0.75rem; font-size: 1rem; }
+  .source {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--sheet);
+  }
+  .where { margin: 0 0 0.35rem; font-size: 0.89rem; color: var(--muted); }
+  .where b { color: var(--ink); }
+  .quote {
+    margin: 0;
+    font: 1.06rem/2 var(--naskh);
+    white-space: pre-line;
+  }
+  /* A cited passage is highlighted, as a student marks a printed regulation. */
+  .quote span {
+    background-image: linear-gradient(var(--mark), var(--mark));
+    background-repeat: no-repeat;
+    background-position: right center;
+    background-size: 0 100%;
+  }
+  .source.shown .quote span { animation: highlight 0.9s ease-out forwards; }
+  @keyframes highlight { to { background-size: 100% 100%; } }
+  @media (prefers-reduced-motion: reduce) {
+    .source.shown .quote span { animation: none; background-size: 100% 100%; }
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1 class="name">دليل</h1>
+  <p class="lead">اسأل عن لوائح الكلية، وتصلك الإجابة مع الصفحة التي تنص عليها.</p>
+
+  <section class="notice" aria-label="تنبيه">
+    <p>دليل أداة مساعدة للبحث في لوائح كليات ومعاهد الهيئة الملكية وأدلتها، وليس جهة رسمية. اقرأ المقطع المذكور قبل أن تعتمد على الإجابة.</p>
+    <p>لا تكتب رقمك الجامعي أو أي معلومة شخصية. تُرسل الأسئلة إلى خدمة Gemini من Google لكتابة الإجابة.</p>
+  </section>
+
+  <form id="ask">
+    <label for="question">سؤالك</label>
+    <textarea id="question" name="question" maxlength="500" required
+      placeholder="مثال: كم نسبة الغياب التي يُحرم بعدها الطالب من المقرر؟"></textarea>
+    <div class="row">
+      <button class="ask" type="submit">اسأل</button>
+      <span class="count" id="count">500 حرف على الأكثر</span>
+    </div>
+  </form>
+
+  <div class="try" id="examples">
+    <p>أو جرّب أحد هذه الأسئلة:</p>
+    <ul class="examples">
+      <li><button class="example" type="button">كم نسبة الغياب التي يُحرم بعدها الطالب من المقرر؟</button></li>
+      <li><button class="example" type="button">كيف أقدم طلب تغيير التخصص من البوابة؟</button></li>
+      <li><button class="example" type="button">متى يُعد كتاب المكتبة مفقودًا إذا تأخرت في إعادته؟</button></li>
+    </ul>
+  </div>
+
+  <p class="status" id="status" aria-live="polite"></p>
+  <div class="answer" id="answer" aria-live="polite"></div>
+  <section class="sources" id="sources" hidden>
+    <h2>المصادر</h2>
+    <ul class="slips" id="source-list"></ul>
+  </section>
+</main>
+
+<script>
+  const MAX = 500;
+  const form = document.getElementById("ask");
+  const box = document.getElementById("question");
+  const button = form.querySelector(".ask");
+  const count = document.getElementById("count");
+  const statusLine = document.getElementById("status");
+  const answerBox = document.getElementById("answer");
+  const sourcesBox = document.getElementById("sources");
+  const sourceList = document.getElementById("source-list");
+
+  // Each step is reported when it ends, so the line says what comes next.
+  const NEXT = {
+    rewrite: "أبحث في الوثائق…",
+    retrieve: "أكتب الإجابة من المصادر…",
+    generate: "أتحقق من الاستشهادات…",
+    verify: "أبحث مرة أخرى في مصادر أكثر…",
+  };
+  const NOT_ANSWERED =
+    "جرّب صياغة أخرى أو سؤالًا أدق، أو اسأل شؤون الطلاب في كليتك.";
+  const DROPPED = "انقطع الاتصال بالخادم قبل أن تكتمل الإجابة. حاول مرة أخرى.";
+  const REJECTED = "اكتب سؤالًا من حرف واحد إلى 500 حرف.";
+
+  const digits = (text) => text.replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+  const escape = (text) =>
+    text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+  function updateCount() {
+    const left = MAX - box.value.length;
+    count.textContent = left < 100 ? `المتبقي: ${left}` : "500 حرف على الأكثر";
+  }
+
+  // The answer's own text, escaped, with **bold**, list lines and [n] citations.
+  function inline(text, numbers) {
+    return escape(text)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\[([0-9٠-٩][0-9٠-٩\s,،]*)\]/g, (whole, inside) =>
+        inside
+          .split(/[\s,،]+/)
+          .filter(Boolean)
+          .map((n) => {
+            const number = Number(digits(n));
+            return numbers.has(number)
+              ? `<button type="button" class="cite" data-n="${number}" aria-label="المصدر ${number}">${number}</button>`
+              : `[${escape(n)}]`;
+          })
+          .join("")
+      );
+  }
+
+  function render(text, numbers) {
+    const parts = [];
+    let items = [];
+    const flush = () => {
+      if (items.length) parts.push(`<ul>${items.join("")}</ul>`);
+      items = [];
+    };
+    for (const line of text.split(/\n+/).map((l) => l.trim()).filter(Boolean)) {
+      const item = line.match(/^(?:[*\-•]|\d+[.)])\s+(.*)$/);
+      if (item) {
+        items.push(`<li dir="auto">${inline(item[1], numbers)}</li>`);
+      } else {
+        flush();
+        parts.push(`<p dir="auto">${inline(line, numbers)}</p>`);
+      }
+    }
+    flush();
+    return parts.join("");
+  }
+
+  function showSources(sources) {
+    sourceList.replaceChildren();
+    for (const source of sources) {
+      const item = document.createElement("li");
+      item.className = "source";
+      item.id = `source-${source.n}`;
+      item.tabIndex = -1;
+      const where = document.createElement("p");
+      where.className = "where";
+      const title = document.createElement("b");
+      title.textContent = `[${source.n}] ${source.doc_title || source.doc_id}`;
+      where.append(title, `، صفحة ${source.page}`);
+      if (source.section_heading) where.append(`، ${source.section_heading}`);
+      const quote = document.createElement("p");
+      quote.className = "quote";
+      const text = document.createElement("span");
+      text.textContent = source.text;
+      quote.append(text);
+      item.append(where, quote);
+      sourceList.append(item);
+    }
+    sourcesBox.hidden = sources.length === 0;
+  }
+
+  function show(result) {
+    const numbers = new Set(result.sources.map((s) => s.n));
+    const answered = result.outcome === "answered";
+    answerBox.className = answered ? "answer" : "answer declined";
+    answerBox.innerHTML = render(result.answer, numbers);
+    answerBox.lang = result.language;
+    if (!answered) {
+      const next = document.createElement("p");
+      next.className = "next";
+      next.textContent = NOT_ANSWERED;
+      answerBox.append(next);
+    }
+    showSources(result.sources);
+  }
+
+  function fail(message) {
+    answerBox.className = "answer";
+    answerBox.replaceChildren();
+    const line = document.createElement("p");
+    line.className = "error";
+    line.textContent = message;
+    answerBox.append(line);
+  }
+
+  answerBox.addEventListener("click", (event) => {
+    const cite = event.target.closest(".cite");
+    if (!cite) return;
+    const source = document.getElementById(`source-${cite.dataset.n}`);
+    if (!source) return;
+    source.classList.remove("shown");
+    void source.offsetWidth;
+    source.classList.add("shown");
+    source.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    source.focus({ preventScroll: true });
+  });
+
+  async function ask(question) {
+    button.disabled = true;
+    statusLine.textContent = NEXT.rewrite;
+    answerBox.replaceChildren();
+    showSources([]);
+    document.getElementById("examples").hidden = true;
+    let finished = false;
+    try {
+      const response = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      if (response.status === 422) {
+        fail(REJECTED);
+        return;
+      }
+      if (!response.ok || !response.body) throw new Error(String(response.status));
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        let end;
+        while ((end = buffer.indexOf("\n\n")) !== -1) {
+          const block = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          const fields = {};
+          for (const line of block.split("\n")) {
+            const colon = line.indexOf(": ");
+            if (colon > 0) fields[line.slice(0, colon)] = line.slice(colon + 2);
+          }
+          const data = JSON.parse(fields.data || "{}");
+          if (fields.event === "step") {
+            if (NEXT[data.step]) statusLine.textContent = NEXT[data.step];
+          } else if (fields.event === "answer") {
+            finished = true;
+            statusLine.textContent = "";
+            show(data);
+          } else if (fields.event === "error") {
+            finished = true;
+            statusLine.textContent = "";
+            fail(data.message);
+          }
+        }
+      }
+      if (!finished) throw new Error("dropped");
+    } catch {
+      statusLine.textContent = "";
+      fail(DROPPED);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = box.value.trim();
+    if (question) ask(question);
+  });
+  box.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  });
+  box.addEventListener("input", updateCount);
+  for (const example of document.querySelectorAll(".example")) {
+    example.addEventListener("click", () => {
+      box.value = example.textContent;
+      updateCount();
+      form.requestSubmit();
+    });
+  }
+</script>
+</body>
+</html>
