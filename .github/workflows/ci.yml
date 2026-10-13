@@ -51,3 +51,29 @@ jobs:
         # No corpus here: the PDFs are not redistributable. The suite runs
         # without them because analyse_text is a pure function over a string.
         run: pytest
+
+  image:
+    name: Docker image (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        # The CPU build: the GPU build differs only in PyTorch's index, and
+        # GitHub's runners have no GPU to try it on.
+        run: docker build --tag daleel:ci .
+
+      - name: Check the installed service
+        # No data or models here: the image's code, its page and fonts, and the
+        # command it starts with, are what can be checked without them.
+        run: |
+          docker run --rm daleel:ci python -c "
+          import torch, sentence_transformers
+          from daleel.serve.app import PAGE
+          assert PAGE.is_file() and len(list((PAGE.parent / 'fonts').glob('*.woff2'))) == 8
+          print('torch', torch.__version__, 'sentence-transformers', sentence_transformers.__version__)
+          "
+          docker run --rm daleel:ci daleel serve --help
+
+      - name: Check the compose file
+        run: GEMINI_API_KEY=unused docker compose --profile gpu --profile cpu config --quiet

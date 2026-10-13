@@ -1,0 +1,55 @@
+# The web service in Docker, with the GPU or without:
+#
+#   mkdir -p data/serve
+#   docker compose --profile gpu up --build     # an NVIDIA GPU and its container toolkit
+#   docker compose --profile cpu up --build     # any machine; slower answers
+#
+# then open http://127.0.0.1:8000. The service answers from the chunks and their
+# bge-m3 vectors in ./data, mounted read-only, and writes its query log and the
+# model's stored replies to ./data/serve. The models are downloaded on the first
+# start, into the volume "models", and kept there. GEMINI_API_KEY is read from .env.
+name: daleel
+
+x-service: &service
+  environment:
+    GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+  ports:
+    # This machine alone. Opening it to a network is a decision for the pilot.
+    - "127.0.0.1:8000:8000"
+  volumes:
+    - ./data/processed:/app/data/processed:ro
+    - ./data/interim/dense:/app/data/interim/dense:ro
+    - ./data/serve:/app/data/serve
+    - models:/home/daleel/.cache/huggingface
+  restart: unless-stopped
+
+services:
+  gpu:
+    <<: *service
+    profiles: [gpu]
+    image: daleel:gpu
+    build:
+      context: .
+      args:
+        TORCH_BUILD: cu130
+    command: [daleel, serve, --host, 0.0.0.0, --port, "8000", --device, cuda]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  cpu:
+    <<: *service
+    profiles: [cpu]
+    image: daleel:cpu
+    build:
+      context: .
+      args:
+        TORCH_BUILD: cpu
+    command: [daleel, serve, --host, 0.0.0.0, --port, "8000", --device, cpu]
+
+volumes:
+  models:
