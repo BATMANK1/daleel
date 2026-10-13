@@ -28,6 +28,14 @@ from daleel.normalize.arabic import for_comparison
 RIYADH = timezone(timedelta(hours=3))
 WEEKS_ID = "calendar_weeks"
 TITLE = "حساب دليل من التقويم الأكاديمي"
+# Said to the model with a source that gives today: without it, the model reads the
+# date as one more document's claim, and says the documents leave out the current date.
+TODAY_NOTE = (
+    "Source [{n}] was computed by Daleel from the academic calendar. Its second line "
+    "gives today's date, read from the server's clock when the question was asked: it "
+    "is the current date. Use it for now, today and this week, and do not say that the "
+    "sources leave out the current date."
+)
 MONTHS = (
     "يناير",
     "فبراير",
@@ -128,12 +136,12 @@ def time_source(
         "وتُعد أسابيع الإجازات معها."
     ]
     if today is not None:
-        now = f"اليوم {DAYS[today.weekday()]} {spell(today)}"
+        now = f"تاريخ اليوم الحالي، وقت طرح السؤال: {DAYS[today.weekday()]} {spell(today)}."
         current = [(s, s.week(today)) for s in found if s.week(today)]
         lines.append(
-            f"{now}، في الأسبوع {current[0][1]} من {current[0][0].name}."
+            f"{now} الأسبوع الحالي هو الأسبوع {current[0][1]} من {current[0][0].name}."
             if current
-            else f"{now}، خارج الفصول الدراسية في التقويم."
+            else f"{now} اليوم خارج الفصول الدراسية في التقويم."
         )
     for semester in found:
         weekday = DAYS[semester.start.weekday()]
@@ -154,6 +162,8 @@ def time_source(
         "section_heading": "أسابيع الفصول الدراسية",
         "clause_no": None,
         "text": "\n".join(lines),
+        # Not shown to the model as part of the source; arms.request says what it means.
+        **({"today": today.isoformat()} if today is not None else {}),
     }
 
 

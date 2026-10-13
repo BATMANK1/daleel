@@ -8,8 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from daleel.answer.arms import request
 from daleel.answer.today import (
     TITLE,
+    TODAY_NOTE,
     WEEKS_ID,
     Semester,
     asks_about_time,
@@ -174,9 +176,10 @@ def test_the_source_lists_every_week_and_opens_with_today() -> None:
     assert source["page"] is None
     lines = source["text"].splitlines()
     assert lines[1] == (
-        f"اليوم الثلاثاء 13 أكتوبر 2026م (2026/10/13، 1448/05/02{HIJRI})، "
-        "في الأسبوع 8 من الفصل الدراسي الأول (481)."
+        f"تاريخ اليوم الحالي، وقت طرح السؤال: الثلاثاء 13 أكتوبر 2026م (2026/10/13، "
+        f"1448/05/02{HIJRI}). الأسبوع الحالي هو الأسبوع 8 من الفصل الدراسي الأول (481)."
     )
+    assert source["today"] == "2026-10-13"
     assert (
         f"الأسبوع 8: من 11 أكتوبر 2026م (2026/10/11، 1448/04/30{HIJRI}) "
         f"إلى 17 أكتوبر 2026م (2026/10/17، 1448/05/06{HIJRI})"
@@ -188,19 +191,20 @@ def test_the_source_lists_every_week_and_opens_with_today() -> None:
 def test_without_today_the_source_is_the_same_every_day() -> None:
     source = time_source(CALENDAR)
     assert source is not None and "اليوم" not in source["text"].splitlines()[1]
+    assert "today" not in source
     assert time_source([GUIDE]) is None
 
 
 def test_a_day_between_semesters_is_said_to_be_outside_them() -> None:
     source = time_source(CALENDAR, today=date(2027, 9, 1))
     assert source is not None
-    assert source["text"].splitlines()[1].endswith("خارج الفصول الدراسية في التقويم.")
+    assert source["text"].splitlines()[1].endswith("اليوم خارج الفصول الدراسية في التقويم.")
 
 
 def test_the_flow_s_hook_adds_the_source_to_questions_about_time_alone() -> None:
     when = calendar_source(CALENDAR, clock=lambda: date(2026, 10, 13))
     added = when("احنا الاسبوع الكم؟")
-    assert added is not None and "الأسبوع 8 من" in added["text"]
+    assert added is not None and "الأسبوع الحالي هو الأسبوع 8 من" in added["text"]
     assert when("كم رسوم الوحدة الدراسية؟") is None
     unchanging = calendar_source(CALENDAR, clock=None)("احنا الاسبوع الكم؟")
     assert unchanging == time_source(CALENDAR)
@@ -210,3 +214,14 @@ def test_an_evaluation_finds_the_computed_source_by_its_id() -> None:
     found = sources_by_id([GUIDE, *CALENDAR])
     assert found[WEEKS_ID] == time_source(CALENDAR) and found["guide_p30_c1"] == GUIDE
     assert WEEKS_ID not in sources_by_id([GUIDE])
+
+
+def test_a_source_that_gives_today_comes_with_a_note_that_it_is_the_current_date() -> None:
+    retrieved = {**GUIDE, "page": 30}
+    today = time_source(CALENDAR, today=date(2026, 10, 13))
+    asked = request("C", "احنا الاسبوع الكم؟", [retrieved, today])
+    note = TODAY_NOTE.format(n=2)
+    assert asked.prompt.endswith(f"</sources>\n\n{note}\n\nQuestion: احنا الاسبوع الكم؟")
+    # Without today, as in an evaluation run, the request is as for any other question.
+    unchanging = request("C", "احنا الاسبوع الكم؟", [retrieved, time_source(CALENDAR)])
+    assert "Daleel" not in unchanging.prompt

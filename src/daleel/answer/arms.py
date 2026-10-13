@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from daleel.answer.llm import GENERATOR, Request
+from daleel.answer.today import TODAY_NOTE
 from daleel.corpus import COMMISSION, YANBU
 from daleel.normalize.arabic import remove_tatweel
 
@@ -145,7 +146,13 @@ def request(
         return Request(model, f"Question: {question}", system=SYSTEM_A, purpose="arm A")
     if arm in ("B", "C"):
         blocks = "\n".join(source_block(n, chunk) for n, chunk in enumerate(sources, start=1))
-        prompt = f"<sources>\n{blocks}\n</sources>\n\nQuestion: {question}"
+        # A source that gives today's date (daleel.answer.today) comes with a note on it.
+        notes = "".join(
+            f"{TODAY_NOTE.format(n=n)}\n\n"
+            for n, chunk in enumerate(sources, start=1)
+            if chunk.get("today")
+        )
+        prompt = f"<sources>\n{blocks}\n</sources>\n\n{notes}Question: {question}"
         return Request(model, prompt, system=SYSTEM_C, purpose=f"arm {arm}")
     raise ValueError(f"no arm {arm!r}; the arms are {', '.join(ARMS)}")
 
