@@ -12,7 +12,8 @@ retry by the flow reaches that far.
 
 These are development numbers. Arm C's prompt and the flow's rules were set
 after reading answers to these questions. The numbers reported for the project
-come from one run of the held-out questions, with the pipeline frozen.
+come from one run of the held-out questions, with the pipeline frozen
+([held_out.md](held_out.md)).
 
 ## Setup
 
