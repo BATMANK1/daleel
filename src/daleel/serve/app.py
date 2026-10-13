@@ -87,11 +87,12 @@ def create_app(
     threshold: float | None = None,
     log: Path | None = None,
     clock: Callable[[], float] = time.monotonic,
+    when: Callable[[str], Mapping[str, Any] | None] | None = None,
 ) -> FastAPI:
-    """The service over the chunks. `search`, `ask`, `confidence` and `threshold` are
-    as build_flow takes them. Each question is appended to `log`, where one is given.
+    """The service over the chunks. `search`, `ask`, `confidence`, `threshold` and `when`
+    are as build_flow takes them. Each question is appended to `log`, where one is given.
     `clock` times each question, read once when it arrives and once when it is answered."""
-    flow = build_flow(search, chunks, ask, confidence=confidence, threshold=threshold)
+    flow = build_flow(search, chunks, ask, confidence=confidence, threshold=threshold, when=when)
     by_id = {chunk["chunk_id"]: chunk for chunk in chunks}
     # The model client and the models serve one request at a time.
     busy = threading.Lock()

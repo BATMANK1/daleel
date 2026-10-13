@@ -458,8 +458,11 @@
     return parts.join("");
   }
 
+  // A computed source, such as the calendar's weeks, has no page.
+  const pageOf = (source) => (source.page == null ? "" : `صفحة ${source.page}`);
   function sourceLabel(source) {
-    return `${source.doc_title || source.doc_id}، صفحة ${source.page}`;
+    const page = pageOf(source);
+    return `${source.doc_title || source.doc_id}${page ? `، ${page}` : ""}`;
   }
 
   // Fills a turn's element from its state: waiting, answered, or failed.
@@ -551,7 +554,7 @@
     close.type = "button";
     close.addEventListener("click", () => closePassage(pressed));
     head.append(title, close);
-    const where = make("p", "where", `صفحة ${source.page}${source.section_heading ? `، ${source.section_heading}` : ""}`);
+    const where = make("p", "where", [pageOf(source), source.section_heading].filter(Boolean).join("، "));
     const quote = make("p", "quote");
     quote.append(make("span", "", source.text));
     passageBody.replaceChildren(head, where, quote);

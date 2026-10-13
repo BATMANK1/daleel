@@ -110,3 +110,29 @@ def test_a_run_not_yet_judged_or_an_unknown_baseline_is_refused(
     judged = write_lines(tmp_path / "C-dev-judged.jsonl", [record("g1", "250", "correct", [])])
     assert results.main([*argv, "--runs", str(judged), "--against", "B-dev"]) == 2
     assert "no run named B-dev" in capsys.readouterr().err
+
+
+def test_a_run_whose_answers_cite_the_calendar_s_weeks_is_measured(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], script: Callable[[str], ModuleType]
+) -> None:
+    # Two semesters' first days: the first semester runs until the second starts.
+    cards = [
+        {
+            "chunk_id": f"academic_weeks_1448_p{page}_c1",
+            "doc_id": "academic_weeks_1448",
+            "page": page,
+            "section_heading": name,
+            "text": f"{name}، بداية الفصل الدراسي: الأحد (Sun) {day}م",
+        }
+        for page, name, day in [
+            (1, "الفصل الدراسي الأول (481)", "2026/08/23"),
+            (2, "الفصل الدراسي الثاني (482)", "2027/01/17"),
+        ]
+    ]
+    argv = ["--chunks", str(write_lines(tmp_path / "chunks.jsonl", [*CHUNKS, *cards]))]
+    argv += ["--gold", str(write_lines(tmp_path / "gold.jsonl", GOLD))]
+    flow = [record("g1", "الرسوم 250 [1] في الأسبوع 8 [2].", "correct", ["fee", "calendar_weeks"])]
+    run = write_lines(tmp_path / "flow-dev-judged.jsonl", flow)
+    assert script("results").main([*argv, "--runs", str(run)]) == 0
+    # The computed source holds no gold quote, so it counts against precision.
+    assert "| flow-dev | 1 | 1.00 |" in capsys.readouterr().out

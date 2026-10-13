@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from daleel.answer.llm import Client
+from daleel.answer.today import calendar_source
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.retrieve.dense import DENSE, ENCODERS, QUESTION, encode, load_model
 from daleel.retrieve.hybrid import chosen_retrieval
@@ -46,4 +47,6 @@ def load_app(
         confidence=best_score(retrieval.scorer),
         threshold=REFUSE_BELOW,
         log=log,
+        # Questions about time get the calendar's weeks, opening with today in Riyadh.
+        when=calendar_source(found),
     )

@@ -123,7 +123,9 @@ def source_block(number: int, chunk: Mapping[str, Any]) -> str:
         where.append(f'date="{chunk["effective"]}"')
     if chunk.get("scope") in SCOPES:
         where.append(f'scope="{SCOPES[chunk["scope"]]}"')
-    where.append(f'page="{chunk["page"]}"')
+    # A computed source (daleel.answer.today) has no page.
+    if chunk.get("page") is not None:
+        where.append(f'page="{chunk["page"]}"')
     if chunk.get("section_heading"):
         where.append(f'section="{remove_tatweel(chunk["section_heading"])}"')
     if chunk.get("clause_no"):

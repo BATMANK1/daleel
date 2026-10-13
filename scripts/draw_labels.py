@@ -31,6 +31,7 @@ import random
 import sys
 from pathlib import Path
 
+from daleel.answer.today import sources_by_id
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.gold import GOLD_V1, load_gold
 from daleel.eval.judge import HAND_LABELS, LABELS, POINTS, case
@@ -102,7 +103,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     questions = {q["qid"]: q for q in load_gold(args.gold)}
-    chunks = {chunk["chunk_id"]: chunk for chunk in read_chunks(args.chunks)}
+    # The chunks, and the calendar's weeks the flow adds to a question about time.
+    chunks = sources_by_id(read_chunks(args.chunks))
     runs = []
     for path in args.runs:
         lines = path.read_text(encoding="utf-8").splitlines()

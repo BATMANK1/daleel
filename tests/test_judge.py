@@ -325,3 +325,44 @@ def test_a_judged_run_counts_each_label_overall_and_by_type(
     assert "| numeric | 2 | 1 | 1 | 0 | 0 | 0 |" in out
     saved = [json.loads(line) for line in (tmp_path / "runs" / "flow-dev-judged.jsonl").open()]
     assert [s["judge"] for s in saved] == ["correct", "partial", None]
+
+
+# Two semesters' first days: the first semester runs until the second starts.
+CALENDAR_CARDS = [
+    {
+        "chunk_id": f"academic_weeks_1448_p{page}_c1",
+        "doc_id": "academic_weeks_1448",
+        "doc_title": "التقويم الأكاديمي",
+        "page": page,
+        "section_heading": name,
+        "text": f"{name}، بداية الفصل الدراسي: الأحد (Sun) {day}م",
+    }
+    for page, name, day in [
+        (1, "الفصل الدراسي الأول (481)", "2026/08/23"),
+        (2, "الفصل الدراسي الثاني (482)", "2027/01/17"),
+    ]
+]
+
+
+def test_an_answer_citing_the_calendar_s_weeks_is_judged_with_that_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: Callable[[str], ModuleType]
+) -> None:
+    prompts: list[str] = []
+
+    class Recording(FakeJudge):
+        def ask(self, asked: Request) -> Reply:
+            prompts.append(asked.prompt)
+            return super().ask(asked)
+
+    gold = [question("g1", type="numeric")]
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    flow = record("answer g1", [2], ["fee", "calendar_weeks"], qid="g1", arm="flow", type="numeric")
+    write_lines(runs / "flow-dev.jsonl", [{**flow, "behavior": "answer"}])
+    chunks = write_lines(tmp_path / "chunks.jsonl", [*CHUNKS.values(), *CALENDAR_CARDS])
+    argv = ["--chunks", str(chunks), "--gold", str(write_lines(tmp_path / "gold.jsonl", gold))]
+    judge_answers = script("judge_answers")
+    monkeypatch.setattr(judge_answers, "Client", Recording)
+    assert judge_answers.main([*argv, "--runs", str(runs / "flow-dev.jsonl")]) == 0
+    [prompt] = prompts
+    assert "حساب دليل من التقويم الأكاديمي" in prompt and "الأسبوع 1: من 23 أغسطس" in prompt
