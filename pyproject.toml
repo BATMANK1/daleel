@@ -12,11 +12,17 @@ dependencies = [
   # corpus as 5.6.0 and 5.7.1 do (eval/results/gate_calibration.md).
   "pypdfium2>=5,<5.13",
   "langgraph>=1.2.14,<2",
+  # The web service (daleel serve).
+  "fastapi>=0.143",
+  "uvicorn>=0.54",
+  "prometheus-client>=0.26",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest",
+  # FastAPI's test client sends its requests with httpx.
+  "httpx>=0.28",
   "ruff",
   "pre-commit",
 ]
