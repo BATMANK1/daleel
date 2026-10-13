@@ -17,6 +17,10 @@ from daleel.normalize.arabic import for_comparison
 # The Arabic decimal separator.
 DECIMAL = chr(0x066B)
 _THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+# A comma between digits with one or two after it is a decimal comma, as Arabic
+# tables often print one, in Arabic-Indic digits: 3,5 is 3.5. Three after it make a
+# thousands separator.
+_DECIMAL_COMMA = re.compile(r"(?<=\d),(?=\d{1,2}(?!\d))")
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 # Numbers written as words, cardinal or ordinal, either gender, with or without
 # the article. A run of them adds up: خمسة عشر is 15, الحادية عشرة 11, خمس
@@ -80,9 +84,10 @@ def _word_value(token: str) -> int:
 
 def numbers(text: str) -> list[float]:
     """The numbers written in a text: in digits of either script, with thousands
-    separators and the Arabic decimal separator, and in words."""
+    separators and the Arabic decimal separator or a decimal comma, and in words."""
     folded = for_comparison(text).replace(DECIMAL, ".")
-    found = [float(number) for number in _NUMBER.findall(_THOUSANDS.sub("", folded))]
+    plain = _DECIMAL_COMMA.sub(".", _THOUSANDS.sub("", folded))
+    found = [float(number) for number in _NUMBER.findall(plain)]
     run = 0
     # Punctuation ends a run, so that a list of numbers is not added up.
     for token in [*re.findall(r"\w+|[^\w\s]", folded), ""]:

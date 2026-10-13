@@ -148,6 +148,15 @@ def test_numbers_are_read_in_either_script_with_their_separators() -> None:
     assert not states_number("ألا يقل عن 3.5", 3.75)
 
 
+def test_a_decimal_comma_is_read_as_the_tables_print_it() -> None:
+    arabic = str.maketrans("0123456789", "".join(chr(0x0660 + d) for d in range(10)))
+    # As the grading table prints the weights of B+ and A.
+    assert states_number(f"وزن التقدير {'3,5'.translate(arabic)} [1].", 3.5)
+    assert states_number(f"وزنه ({'3,75'.translate(arabic)}) من ٤", 3.75)
+    # Three digits after the comma still make a thousands separator.
+    assert numbers("الرسوم 1,100 و3,5") == [1100.0, 3.5]
+
+
 def test_citations_are_measured_against_the_quotes_they_should_hold() -> None:
     units = [frozenset({"fee"}), frozenset({"gpa", "other"})]
     both = citation_measures(citations("[1][3]"), SOURCES, units)
