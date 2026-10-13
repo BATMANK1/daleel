@@ -66,7 +66,7 @@ class Hybrid:
 def chosen_retrieval(
     chunks: Sequence[Mapping[str, Any]],
     dense: Path,
-    rerank: Path,
+    rerank: Path | None,
     encode_question: Callable[[str], np.ndarray] | None = None,
     score: Scorer | None = None,
 ) -> Hybrid:
@@ -75,11 +75,14 @@ def chosen_retrieval(
 
     A question with no stored vector is encoded by `encode_question`, and one
     with a chunk to rerank that has no stored score is scored by `score`, where
-    they are given: the models, for questions not asked before.
+    they are given: the models, for questions not asked before. With `rerank`
+    None, no scores are stored, and `score` scores them all.
     """
+    if rerank is None and score is None:
+        raise ValueError("with no stored scores, reranking needs a score function")
     texts = {chunk["chunk_id"]: chunk["text"] for chunk in chunks}
     bge = DenseIndex(chunks, VectorStore.load(dense / "bge-m3.npz"), encode_question)
-    stored = ScoreStore.load(rerank)
+    stored = ScoreStore.load(rerank) if rerank is not None else ScoreStore()
 
     def scorer(question: str, candidates: Sequence[str]) -> Sequence[float]:
         if score is not None and stored.missing(question, candidates):

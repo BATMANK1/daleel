@@ -435,12 +435,13 @@ python3 scripts/judge_answers.py --runs <files>   # the judge's label for every 
 python3 scripts/results.py --runs <judged files>  # tables T5, T7 and T8, with bootstrap intervals
 python3 scripts/refusal_threshold.py              # where to refuse without asking the model, set on dev
 python3 scripts/eval_rewrite.py                   # whether rewriting questions finds more evidence, on dev
+daleel serve                                      # the page, and /ask, /search, /health and /metrics, on port 8000
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
 ```
 
-Every `daleel` command also accepts `--json`. `python3 scripts/calibrate_gate.py`
+Every `daleel` command but `serve` also accepts `--json`. `python3 scripts/calibrate_gate.py`
 reproduces every number in the gate's calibration, given the hand-transcribed
 ground truth, which is not redistributed.
 
