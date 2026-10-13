@@ -207,3 +207,47 @@ def test_rewritten_queries_are_each_searched_and_fused() -> None:
 def test_a_question_with_any_arabic_letter_is_arabic() -> None:
     assert language(QUESTION) == "ar" and language("ما هو GPA؟") == "ar"
     assert language("What is the GPA?") == "en"
+
+
+WEEKS = {
+    "chunk_id": "calendar_weeks",
+    "doc_id": "academic_weeks_1448",
+    "doc_title": "حساب دليل من التقويم الأكاديمي",
+    "page": None,
+    "section_heading": "أسابيع الفصول الدراسية",
+    "clause_no": None,
+    "text": "اليوم الثلاثاء 13 أكتوبر 2026م، في الأسبوع 8 من الفصل الدراسي الأول (481).",
+}
+
+
+def about_time(question: str) -> dict[str, Any] | None:
+    return WEEKS if "الاسبوع" in question else None
+
+
+def test_a_question_about_time_gets_the_computed_source_after_the_retrieved_ones() -> None:
+    model = Model("نحن في الأسبوع 8 [6].")
+    state = build_flow(Search(), CHUNKS, model, when=about_time).invoke(
+        {"question": "احنا الاسبوع الكم؟"}
+    )
+    assert [source["chunk_id"] for source in state["sources"]] == [*RANKING[:5], "calendar_weeks"]
+    assert state["outcome"] == "answered" and state["cited"] == [6]
+    assert given(model.asked[0]) == 6 and "الأسبوع 8 من" in model.asked[0].prompt
+
+
+def test_a_question_about_time_is_not_refused_for_a_weak_retrieval() -> None:
+    model = Model("نحن في الأسبوع 8 [6].")
+    flow = build_flow(
+        Search(), CHUNKS, model, confidence=lambda *_: -9.0, threshold=-4.0, when=about_time
+    )
+    state = flow.invoke({"question": "احنا الاسبوع الكم؟"})
+    assert state["outcome"] == "answered" and state["confidence"] == -9.0
+    # Other questions still are.
+    refused = flow.invoke({"question": QUESTION})
+    assert (refused["outcome"], refused["reason"]) == ("refused", "low confidence")
+
+
+def test_other_questions_are_asked_exactly_as_without_the_hook() -> None:
+    plain, hooked = Model("رسوم الوحدة 250 ريالاً [1]."), Model("رسوم الوحدة 250 ريالاً [1].")
+    build_flow(Search(), CHUNKS, plain).invoke({"question": QUESTION})
+    build_flow(Search(), CHUNKS, hooked, when=about_time).invoke({"question": QUESTION})
+    assert hooked.asked == plain.asked

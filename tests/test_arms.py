@@ -84,6 +84,11 @@ def test_a_source_says_when_and_whom_its_document_governs() -> None:
     )
 
 
+def test_a_computed_source_with_no_page_gives_none() -> None:
+    computed = {**SOURCES[0], "page": None}
+    assert "page=" not in source_block(1, computed)
+
+
 def test_calendar_ranges_printed_right_to_left_are_written_first_day_first() -> None:
     printed = f"النهائية 2026/12/31-20م، 1448/07/22-11{HIJRI}، وبداية الدراسة 2026/08/23م"
     assert readable_ranges(printed) == (

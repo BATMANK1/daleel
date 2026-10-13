@@ -66,6 +66,7 @@ def build_flow(
     confidence: Callable[[str, Sequence[Mapping[str, Any]]], float] | None = None,
     threshold: float | None = None,
     verify: Callable[[str, str, Sequence[Mapping[str, Any]]], bool] | None = None,
+    when: Callable[[str], Mapping[str, Any] | None] | None = None,
     depths: Sequence[int] = DEPTHS,
 ) -> CompiledStateGraph:
     """The answering flow, compiled. `flow.invoke({"question": q})` returns the final state.
@@ -73,8 +74,11 @@ def build_flow(
     `search(query, k)` gives chunk ids, best first, and `ask` answers a request
     to the model. A question whose `confidence` is below `threshold` is refused
     without asking the model. `verify(question, answer, sources)`, where given,
-    checks an answer that passed the other checks. Each of `depths` is one
-    attempt's retrieval depth.
+    checks an answer that passed the other checks. `when(question)`, where
+    given, may add a source for a question about time (daleel.answer.today):
+    it is given after the retrieved ones, and such a question is not refused
+    for low confidence, since that source is about it by construction. Each of
+    `depths` is one attempt's retrieval depth.
     """
     if threshold is not None and confidence is None:
         raise ValueError("threshold requires a confidence function")
@@ -107,10 +111,13 @@ def build_flow(
         score = (
             confidence(state["question"], sources) if sources and confidence is not None else None
         )
+        added = when(state["question"]) if when is not None else None
+        if added is not None:
+            sources.append(dict(added))
 
         if not sources:
             reason = "no sources"
-        elif threshold is not None and score is not None and score < threshold:
+        elif added is None and threshold is not None and score is not None and score < threshold:
             reason = "low confidence"
         else:
             reason = ""

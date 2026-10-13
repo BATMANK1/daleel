@@ -8,8 +8,9 @@ sends the whole corpus; it runs only when named in --arms. Arm C's sources
 are the first five chunks of the retrieval chosen in table T4 (BM25 + bge-m3
 fused, the first 20 reranked), computed from the vectors and
 reranker scores stored in data/interim/, so no GPU is needed. The flow arm
-uses the same retrieval, with a confidence gate, citation checks and an
-optional second attempt using ten sources. Each answer is asked through
+uses the same retrieval, with a confidence gate, citation checks, an
+optional second attempt using ten sources, and the calendar's weeks for a
+question about time (daleel.answer.today), without today's date. Each answer is asked through
 daleel.answer.llm, which stores it, so a second run, or a run stopped by the
 day's quota, asks only what is new. The answers go to
 data/interim/runs/<arm>-<split>[-<tag>].jsonl.
@@ -47,6 +48,7 @@ from daleel.answer.arms import ARMS, SOURCES, citations, request
 from daleel.answer.flow import build_flow
 from daleel.answer.llm import GENERATOR, MODELS, Client, QuotaExhaustedError
 from daleel.answer.measure import citation_measures, declines, names_gap, states_number
+from daleel.answer.today import calendar_source
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.gold import ANSWERABLE, GOLD_V1, SPLITS, behavior, load_gold
 from daleel.eval.retrieval import by_page, evidence
@@ -70,6 +72,8 @@ def answer_all(
             client.ask,
             confidence=best_score(retrieval.scorer),
             threshold=REFUSE_BELOW,
+            # Without today, so that a run does not depend on the day it is made.
+            when=calendar_source(chunks, clock=None),
         )
         if arm == "flow"
         else None

@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 from daleel.answer.llm import JUDGE, Client, LlmError
+from daleel.answer.today import sources_by_id
 from daleel.chunk.chunker import CHUNKS, read_chunks
 from daleel.eval.agreement import cohen_kappa, confusion
 from daleel.eval.gold import GOLD_V1, load_gold
@@ -71,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
         return 4
 
     questions = {q["qid"]: q for q in load_gold(args.gold)}
-    chunks = {chunk["chunk_id"]: chunk for chunk in read_chunks(args.chunks)}
+    # The chunks, and the calendar's weeks the flow adds to a question about time.
+    chunks = sources_by_id(read_chunks(args.chunks))
     runs: dict[str, dict[str, dict]] = {}
     for name in {k["run"] for k in key}:
         lines = (args.runs / name).read_text(encoding="utf-8").splitlines()
