@@ -36,6 +36,8 @@ from daleel.ingest.records import (
 from daleel.ingest.router import ExtractionPath, route
 from daleel.ocr import dots
 from daleel.ocr.cache import CACHE, CachedReader
+from daleel.retrieve.dense import DENSE
+from daleel.serve import QUERIES, REPLIES
 
 # --- shared ------------------------------------------------------------------
 
@@ -699,6 +701,79 @@ def _run_chunk(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- serve -------------------------------------------------------------------
+
+
+def _add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "serve",
+        help="answer questions over HTTP, with the page at /",
+        description=(
+            "Load the chunks, bge-m3 and the reranker, and answer questions with the "
+            "answering flow over HTTP: the page at /, and /ask, /search, /health and "
+            "/metrics. Each question is logged to LOG with the hour, never the minute, "
+            "and with nothing about who asked. Requests are not logged at all, since "
+            "an access log would hold the address of whoever asked."
+        ),
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="address to listen on; 0.0.0.0 lets other machines reach it (default: %(default)s)",
+    )
+    parser.add_argument("--port", type=int, default=8000, help="(default: %(default)s)")
+    parser.add_argument(
+        "--device", default=None, help="cuda or cpu for the two models (default: cuda if there)"
+    )
+    parser.add_argument(
+        "--chunks", type=Path, default=CHUNKS, help="the chunks (default: %(default)s)"
+    )
+    parser.add_argument(
+        "--dense",
+        type=Path,
+        default=DENSE,
+        help="folder with the chunks' bge-m3 vectors (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--log", type=Path, default=QUERIES, help="the query log (default: %(default)s)"
+    )
+    parser.add_argument(
+        "--replies",
+        type=Path,
+        default=REPLIES,
+        help="folder for the model's stored replies (default: %(default)s)",
+    )
+
+
+def _run_serve(args: argparse.Namespace) -> int:
+    # Imported here, so that the other commands start without the web server.
+    import uvicorn
+
+    from daleel.answer.llm import LlmError, api_key
+    from daleel.serve.load import load_app
+
+    if not args.chunks.is_file():
+        print(f"error: no chunks at {args.chunks}. Build them with: daleel chunk", file=sys.stderr)
+        return 2
+    vectors = args.dense / "bge-m3.npz"
+    if not vectors.is_file():
+        print(
+            f"error: no chunk vectors at {vectors}. Encode them with: "
+            "python3 scripts/encode_dense.py --encoders bge-m3",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        api_key()
+    except LlmError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    app = load_app(args.chunks, args.dense, args.device, args.log, args.replies)
+    print(f"Daleel is at http://{args.host}:{args.port}/", file=sys.stderr)
+    uvicorn.run(app, host=args.host, port=args.port, access_log=False, server_header=False)
+    return 0
+
+
 # --- entry point -------------------------------------------------------------
 
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
@@ -708,6 +783,7 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "extract": _run_extract,
     "calendar": _run_calendar,
     "chunk": _run_chunk,
+    "serve": _run_serve,
 }
 
 
@@ -723,6 +799,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_extract_parser(subparsers)
     _add_calendar_parser(subparsers)
     _add_chunk_parser(subparsers)
+    _add_serve_parser(subparsers)
     return parser
 
 
