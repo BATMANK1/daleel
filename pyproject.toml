@@ -25,6 +25,8 @@ dev = [
   "pytest",
   # FastAPI's test client sends its requests with httpx.
   "httpx>=0.28",
+  # The tests read compose.yaml.
+  "pyyaml>=6",
   "ruff",
   "pre-commit",
 ]

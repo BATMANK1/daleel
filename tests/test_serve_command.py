@@ -160,3 +160,15 @@ def test_live_reranking_needs_a_score_function(tmp_path: Path) -> None:
     store.save(tmp_path / "bge-m3.npz")
     with pytest.raises(ValueError, match="score function"):
         chosen_retrieval(CHUNKS, tmp_path, None)
+
+
+def test_serve_stops_before_loading_anything_when_it_cannot_write_its_log(
+    served: dict, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A file where the folder for the log should be, as an unwritable mount would be.
+    blocked = served["tmp"] / "blocked"
+    blocked.write_text("not a folder", encoding="utf-8")
+    argv = [*served["argv"], "--log", str(blocked / "queries.jsonl")]
+    assert cli.main(argv) == 2
+    assert "mkdir -p data/serve" in capsys.readouterr().err
+    assert served["ran"] == {} and FakeClient.made == []

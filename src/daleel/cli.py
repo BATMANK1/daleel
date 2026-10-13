@@ -768,6 +768,20 @@ def _run_serve(args: argparse.Namespace) -> int:
     except LlmError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
+    # Checked before the models load, rather than found out at the first question.
+    for folder in (args.log.parent, args.replies):
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            probe = folder / ".writable"
+            probe.touch()
+            probe.unlink()
+        except OSError as error:
+            print(
+                f"error: cannot write to {folder} ({error.strerror}). In Docker, create "
+                "data/serve on the host before the first start: mkdir -p data/serve",
+                file=sys.stderr,
+            )
+            return 2
     app = load_app(args.chunks, args.dense, args.device, args.log, args.replies)
     print(f"Daleel is at http://{args.host}:{args.port}/", file=sys.stderr)
     uvicorn.run(app, host=args.host, port=args.port, access_log=False, server_header=False)

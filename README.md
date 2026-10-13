@@ -436,6 +436,7 @@ python3 scripts/results.py --runs <judged files>  # tables T5, T7 and T8, with b
 python3 scripts/refusal_threshold.py              # where to refuse without asking the model, set on dev
 python3 scripts/eval_rewrite.py                   # whether rewriting questions finds more evidence, on dev
 daleel serve                                      # the page, and /ask, /search, /health and /metrics, on port 8000
+docker compose --profile gpu up --build           # the same in Docker, from ./data (see compose.yaml); --profile cpu without a GPU
 python3 scripts/ocr_eval.py tesseract             # score an OCR engine against the ground truth
 python3 scripts/ocr_eval.py saved <run folder>    # score a saved OCR run again
 pytest                                            # the test suite
