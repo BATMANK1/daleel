@@ -391,3 +391,10 @@ def test_the_page_sends_the_code_its_invitation_link_carries() -> None:
     assert 'addEventListener("hashchange"' in page
     assert '"X-Access-Code"' in page
     assert "response.status === 401" in page
+
+
+def test_the_page_sets_latin_words_apart_in_arabic_text() -> None:
+    page = service(Model()).get("/").text
+    # A portal's English button names inside an Arabic sentence are isolated, in the
+    # answers and in the passages, so that brackets around them stay in place.
+    assert '"<bdi>"' in page and 'make("bdi"' in page

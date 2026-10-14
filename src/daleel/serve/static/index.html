@@ -308,7 +308,10 @@
   .placeholder { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.8; }
 
   @media (min-width: 64rem) {
-    .app { grid-template-columns: minmax(0, 46rem) 26rem; gap: 0; }
+    /* The page fills the screen: the passage grows with it, at the edge, and the
+       conversation is centred in the rest, at a width a line can be read at. */
+    .app { grid-template-columns: minmax(0, 1fr) clamp(26rem, 34vw, 44rem); justify-content: stretch; gap: 0; }
+    .column { justify-self: center; width: min(100%, 50rem); }
     /* Sticky to the window, so the passage stays beside whichever answer is being read. */
     .passage {
       position: sticky;
@@ -324,6 +327,10 @@
     }
     .passage[hidden] { display: block !important; }
     .scrim, .close { display: none !important; }
+  }
+  @media (min-width: 110rem) {
+    body { font-size: 18px; }
+    .column { width: min(100%, 54rem); }
   }
   @media (prefers-reduced-motion: reduce) {
     .quote span { animation: none; background-size: 100% 100%; }
@@ -439,9 +446,27 @@
   const escape = (text) =>
     text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-  // The answer's own text, escaped, with **bold** and its [n] citations as buttons.
+  // Words in Latin letters inside Arabic, such as a portal's button names, are set
+  // apart (bdi), so that the brackets and slashes around them stay where the sentence
+  // puts them instead of jumping across the line.
+  const LATIN = /[A-Za-z](?:[A-Za-z0-9 ./_'&+-]*[A-Za-z0-9])?/g;
+  const OPEN = "\uE000";
+  const SHUT = "\uE001";
+  function isolated(text) {
+    const pieces = document.createDocumentFragment();
+    let last = 0;
+    for (const found of text.matchAll(LATIN)) {
+      pieces.append(text.slice(last, found.index), make("bdi", "", found[0]));
+      last = found.index + found[0].length;
+    }
+    pieces.append(text.slice(last));
+    return pieces;
+  }
+
+  // The answer's own text, escaped, with **bold**, its Latin words set apart, and its
+  // [n] citations as buttons.
   function inline(text, numbers) {
-    return escape(text)
+    return escape(text.replace(LATIN, (run) => OPEN + run + SHUT))
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/\[([0-9٠-٩][0-9٠-٩\s,،]*)\]/g, (whole, inside) =>
         inside
@@ -454,7 +479,9 @@
               : `[${escape(n)}]`;
           })
           .join("")
-      );
+      )
+      .replaceAll(OPEN, "<bdi>")
+      .replaceAll(SHUT, "</bdi>");
   }
 
   function render(text, numbers) {
@@ -574,7 +601,9 @@
     head.append(title, close);
     const where = make("p", "where", [pageOf(source), source.section_heading].filter(Boolean).join("، "));
     const quote = make("p", "quote");
-    quote.append(make("span", "", source.text));
+    const marked = make("span");
+    marked.append(isolated(source.text));
+    quote.append(marked);
     passageBody.replaceChildren(head, where, quote);
     passage.hidden = false;
     passage.scrollTop = 0;
