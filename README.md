@@ -6,6 +6,8 @@ Answers students' questions about the regulations of the Royal Commission for
 Jubail and Yanbu's colleges, in Arabic or English, and cites the document,
 page and clause behind every answer.
 
+![A question asked in Arabic about the time left before the final exams, the answer streamed with today's date, the exam dates and their sources cited](docs/demo.gif)
+
 On 20 held-out questions, answered once with the pipeline frozen, a judge
 model checked against hand labels marks 13 of Daleel's answers correct and 6
 partial: an accuracy of 0.65, with a 95% interval of 0.45 to 0.85, and one
@@ -244,7 +246,10 @@ than the 72 questions the prediction had in mind.
   newer. Its sense of time comes from the 1448 calendar alone: it counts a
   semester's weeks in sevens from the semester's first day, holiday weeks
   included, which may not be how a college numbers them, and a date outside
-  that year gets no week.
+  that year gets no week. The model does the date arithmetic itself: asked
+  twice on the same day how many days were left before the first semester's
+  finals, it answered 67 and then 66, counting the day itself once and not
+  the other time. Counting the days in the calendar source would settle it.
 - **Privacy.** Questions are redacted on arrival, but they go to Google's
   Gemini API, and on its free tier Google may use them to improve its
   products, and people may read them
