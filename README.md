@@ -2,19 +2,24 @@
 
 [![CI](https://github.com/BATMANK1/daleel/actions/workflows/ci.yml/badge.svg)](https://github.com/BATMANK1/daleel/actions/workflows/ci.yml)
 
-Answers questions about Royal Commission for Jubail and Yanbu college
-regulations in Arabic, with the exact clause cited.
+Answers students' questions about the regulations of the Royal Commission for
+Jubail and Yanbu's colleges, in Arabic or English, and cites the document,
+page and clause behind every answer.
 
-On the 54 development questions the corpus answers, a naive pipeline
-(poppler's `pdftotext`, BM25 on words as written) puts 15% of the evidence
-among its first five results. Daleel's extraction, chunking and Arabic
-analyzer put 84% there ([table T3](eval/results/retrieval.md)), and fusing
-BM25 with a multilingual encoder and reranking the result puts 93% there
-([table T4](eval/results/retrieval.md#t4)).
+On 20 held-out questions, answered once with the pipeline frozen, a judge
+model checked against hand labels marks 13 of Daleel's answers correct and 6
+partial: an accuracy of 0.65, with a 95% interval of 0.45 to 0.85, and one
+hallucinated answer. Given the whole corpus in its context instead, the same
+answering model scores the same, at about 44 times the cost per question;
+given no documents, it scores 0.10. Retrieval puts 91% of the evidence those questions
+need among the five passages the model reads, where a naive pipeline
+(poppler's `pdftotext`, BM25 on words as written) puts 11%. See
+[Results](#results).
 
-> **Status: in development.** This README grows with the repository.
-> No result is published here until it has been measured. See
-> [Results](#results).
+> **Status: phase 1 complete.** Extraction, retrieval, answering and the web
+> service are built and measured, once, on the held-out questions. Phase 2,
+> which fine-tunes a small open model to compare with retrieval, has not
+> started. Daleel is a research aid, not an official source.
 
 ## The problem
 
@@ -28,7 +33,233 @@ act on it and the registrar cannot confirm it. So **every answer this system
 gives carries a document, page and clause reference.** Citation is a hard
 functional requirement, not a feature.
 
-## Why this is not a "chat with your PDF" project
+The documents make this harder than it looks. Read with pdfplumber or
+poppler's `pdftotext`, six of the nine give most of their Arabic as
+presentation forms, glyph variants that share no codepoints with what a
+student types. The three exported from Word and PowerPoint give valid Arabic
+letters that spell the wrong words, which no structural check can flag. And
+25 of the 257 pages have no Arabic text layer at all. A pipeline that trusts
+the text layer answers from text that is not on the page.
+[How it works](#how-it-works) shows each failure and what Daleel does about it.
+
+## Architecture
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img src="docs/architecture-light.svg" alt="Daleel's architecture: a pipeline built once from the PDFs, then the path each question takes from retrieval to a cited answer, a decline or a refusal">
+</picture>
+
+The first part runs once, offline, and needs a GPU for OCR and for the
+vectors. The second runs for every question, on any machine, faster with a
+GPU: it reads the chunks and their vectors, and calls Google's Gemini API for
+each answer. A refusal is a fixed sentence; a decline is the model's own, and
+may name what the documents leave out. [How it works](#how-it-works) gives
+every step and the evidence for it.
+
+## Quickstart
+
+Daleel answers from chunks of the colleges' documents, and the documents are
+not redistributed here ([Source documents](#source-documents)). So it needs
+two files made from the PDFs by the pipeline, `data/processed/chunks.jsonl`
+and `data/interim/dense/bge-m3.npz`, and a Gemini API key, which
+[Google AI Studio](https://aistudio.google.com/apikey) gives for free.
+
+**With those two files**, copied from a machine that ran the pipeline,
+Docker is all it takes:
+
+```bash
+git clone https://github.com/BATMANK1/daleel && cd daleel
+cp .env.example .env                       # then set GEMINI_API_KEY in it
+mkdir -p data/serve                        # for the query log and the stored replies
+docker compose --profile gpu up --build    # with an NVIDIA GPU and its container toolkit
+docker compose --profile cpu up --build    # or on any machine, with slower answers
+```
+
+Then open <http://127.0.0.1:8000>. The first start downloads bge-m3 and the
+reranker, 6.9 GB, into the volume `models`, and later starts reuse them. The
+GPU image takes 9.7 GB of disk. The data is mounted read-only, the key is
+passed in when the container starts, and the service listens on this machine
+alone ([`compose.yaml`](compose.yaml)). The service runs as user 1000, the
+first user on most Linux machines, so `data/serve` must be writable by that
+user.
+
+**From the PDFs**, the pipeline needs Python 3.12, the nine PDFs placed as
+[`data/README.md`](data/README.md) says, and an NVIDIA GPU for OCR and the
+vectors:
+
+```bash
+uv venv --python 3.12 && source .venv/bin/activate
+uv pip install -e ".[dense]"                          # on a GPU, PyTorch for your CUDA first
+python3 scripts/fetch_lexicon.py                      # the quality gate's word list
+sha256sum -c data/SHA256SUMS                          # your PDFs, checked against these
+daleel extract data/raw/ --quantization fp8 --max-pixels 5400000
+daleel chunk                                          # data/processed/chunks.jsonl
+python3 scripts/encode_dense.py --encoders bge-m3     # data/interim/dense/bge-m3.npz
+daleel serve                                          # or Docker, as above
+```
+
+`daleel extract` reads the pages its text layer cannot serve with dots.mocr,
+served by vLLM as [`eval/results/ocr.md`](eval/results/ocr.md) shows. On an
+RTX 3060 Ti it read the 80 such pages in 48 minutes. `daleel serve` reads
+`GEMINI_API_KEY` from the environment or from `.env`.
+
+## Results
+
+Every design choice was made on 60 development questions. The 20 held-out
+questions were run once, at the tag `frozen-v1`, after the pipeline was
+frozen, and they give the reported numbers wherever a table has them.
+
+| Table | What it measures | Result | Details |
+|---|---|---|---|
+| T1 | How each document's text layer is damaged | Read with pdfplumber, six of the nine give 71% to 77% of their Arabic as presentation forms; the Word and PowerPoint exports give wrong letters; 25 of 257 pages have no Arabic text layer | [below](#why-this-is-not-a-chat-with-your-pdf-project) |
+| T2 | OCR engines on hand-transcribed pages | dots.mocr misreads 4.4% of characters, against 11.7% to 14.4% for Tesseract and PaddleOCR | [ocr.md](eval/results/ocr.md#t2) |
+| T3 | What extraction and each analyzer step buy BM25 | 78% of the held-out questions' evidence in the first five results, against 11% for a naive pipeline (dev: 84% against 15%) | [retrieval.md](eval/results/retrieval.md#t3) |
+| T4 | Dense encoders, fusion and reranking | BM25 and bge-m3, fused and reranked: 91% of the held-out evidence in the first five (dev: 93%), in 238 ms per question at the median on an RTX 3060 Ti | [retrieval.md](eval/results/retrieval.md#t4) |
+| T5 | Answer quality, by arm | The flow is correct on 0.65 of the held-out questions; arms B, C and the flow are not told apart | [held_out.md](eval/results/held_out.md#t5-quality) |
+| T6 | Behaviour: fluency, citation format, refusals, structure | Not yet measured: it compares the fine-tuned arms of phase 2 | |
+| T7 | Time and cost | Arm B costs $42.26 per 1,000 questions at paid rates, the flow $0.95 | [held_out.md](eval/results/held_out.md#t7-time-and-cost) |
+| T8 | Answer quality by question type | Questions in several parts are the hardest: the flow is correct on 1 of 3 held out, and 2 of 7 on dev | [held_out.md](eval/results/held_out.md#t8-correct-answers-by-question-type) |
+| T9 | The judge against hand labels | Same label on 56 of 60 answers, kappa 0.90 (0.78 to 0.98) | [judge_agreement.md](eval/judge_agreement.md) |
+
+The answers (T5), on the held-out questions. Every arm uses
+`gemini-3.5-flash-lite`, and the judge, `gemma-4-31b-it`, labels each answer
+correct, partial, incorrect or hallucinated:
+
+| Arm | What the model is given | Accuracy | 95% interval | Correct or partial | Hallucinated | $ per 1,000 questions |
+|---|---|---|---|---|---|---|
+| A | the question alone | 0.10 | 0.00 to 0.25 | 3/20 | 5/20 | 0.13 |
+| B | all 768 chunks, about 140,000 tokens | 0.65 | 0.45 to 0.85 | 18/20 | 2/20 | 42.26 |
+| C | the first five chunks retrieved | 0.70 | 0.50 to 0.90 | 19/20 | 1/20 | 0.79 |
+| **flow** | **as C, then checked and asked again once** | **0.65** | **0.45 to 0.85** | **19/20** | **1/20** | **0.95** |
+
+Twenty questions cannot tell arms B, C and the flow apart: the interval of
+the difference between any two of them includes no difference. The 0.05
+between arm C and the flow is one question on which the two answers differ
+by two words and the judge labels them differently. So the flow is chosen
+over arm B for its cost, about a 44th of arm B's, and its speed, and over
+arm C for what it guarantees: every answer it returns, other than a decline, cites a source
+it was given, and a question that retrieval finds nothing close to is
+refused before the model sees it. On dev, where the prompt and the flow's
+rules were set, the flow scores 0.77 and arm B 0.83
+([answers.md](eval/results/answers.md)).
+
+## Prediction
+
+Stated on 9 October 2026, before any arm that answers questions was run.
+
+The study compares five ways of answering: A, a model without the
+documents; B, the whole corpus in the model's context; C, this pipeline,
+retrieving clauses for the model to answer from; D, a model fine-tuned on
+the corpus, without retrieval; E, the fine-tuned model with retrieval. Each
+comparison holds the model fixed. Arms A to C use `gemini-3.5-flash-lite`
+through Google's API, and arms A, C, D and E then run on one small
+open-weight model, which unlike an API model can be fine-tuned.
+
+1. **Arm A answers almost nothing.** Without the documents the model may
+   know the general shape of Saudi college rules, but not these colleges'
+   numbers. It will get few numeric questions exactly right, and it will
+   state wrong values rather than say it does not know.
+2. **Arm B comes close to arm C on accuracy, but not on citations or cost.**
+   With the whole corpus in its context it can find most answers, within
+   about 10 points of arm C's accuracy. But it has to name the page itself,
+   so fewer of its citations will hold the answer, and each question will
+   cost it about 50 times arm C's input tokens.
+3. **Arm C leads on valid citations and exact numbers,** and declines the
+   questions the corpus does not answer.
+4. **Retrieval beats fine-tuning on knowledge.** Fine-tuning teaches form
+   and behaviour far better than it teaches specific numbers. For a corpus
+   of precise thresholds, such as a cumulative average of 3.75 out of 4.00,
+   or fees of 250, 750 and 1,100 per credit unit, arm D will answer fluently
+   and with wrong values. Arm E may beat arm C on behaviour (register,
+   structure, declining what it cannot answer) while matching it on
+   knowledge: retrieval for facts, fine-tuning for form.
+
+With 72 answerable questions, differences under about 10 points are not
+findings. Each prediction will be marked here as held or not held, with its
+numbers, once its arms have run.
+
+### How it held
+
+Marked on 14 October 2026, from the held-out run, with dev beside it. With
+20 held-out questions, 18 of them answerable, these comparisons are rougher
+than the 72 questions the prediction had in mind.
+
+1. **Mostly held.** Arm A scores 0.10 held out and 0.15 on dev, and states
+   the gold number in 1 of the 6 held-out answers that need one (1 of 16 on
+   dev). But the last part did not hold: it declines rather than guess, on 14
+   of the 20 held-out questions and 41 of the 60 on dev. When it does answer,
+   5 of its 6 held-out answers are hallucinated.
+2. **Held in part.** Arm B is within 10 points of arm C: 0.65 against 0.70
+   held out, and 0.83 against 0.75 on dev, where it is ahead. It costs more
+   than predicted: 84 times arm C's input tokens held out (92 on dev), and 53
+   times its cost in dollars. Its citations are worse on dev only: 0.73 of
+   the chunks it cites hold the answer, against arm C's 0.81. Held out, the
+   two tie, at 0.78 and 0.77.
+3. **Not held as stated.** Held out, arm C leads arm B on neither measure:
+   both state the gold number in 6 of 6 answers, and their citation
+   precision is 0.77 and 0.78. On dev, arm C led on citations, 0.81 against
+   0.73, and tied on numbers, 16 of 16 each. It declined every question the
+   corpus cannot answer: the two on dev, and the one held out.
+4. **Not yet tested.** Arms D and E are phase 2.
+
+## Limitations
+
+- **Few questions.** The reported numbers rest on 20 held-out questions, so
+  one question moves an arm's accuracy by 0.05, and each interval is about
+  0.4 wide.
+- **The judge.** It agrees with hand labels on 56 of 60 dev answers, but on
+  the held-out run it gave different labels to two pairs of answers that say
+  the same thing ([held_out.md](eval/results/held_out.md#limits)). Its rubric
+  does not check the language of an answer.
+- **English questions can get Arabic answers.** The prompt asks for the
+  question's language, and the three English dev questions got English, but
+  the held-out English question was answered in Arabic, and so was an
+  English question about the week, asked of the running service.
+- **Answers that stop short.** The flow's most common miss, held out, is an
+  answer that gives part of what its sources say: a step, or a condition
+  that comes with a number.
+- **Retrieval.** Questions in several parts lose evidence that ranks below
+  tenth, and a procedure that runs onto the next page can lose its last
+  steps ([held_out.md](eval/results/held_out.md#where-the-flow-falls-short)).
+- **The corpus.** Daleel knows the nine documents as published, and nothing
+  newer. Its sense of time comes from the 1448 calendar alone: it counts a
+  semester's weeks in sevens from the semester's first day, holiday weeks
+  included, which may not be how a college numbers them, and a date outside
+  that year gets no week.
+- **Privacy.** Questions are redacted on arrival, but they go to Google's
+  Gemini API, and on its free tier Google may use them to improve its
+  products, and people may read them
+  ([terms](https://ai.google.dev/gemini-api/terms)). The page says so. A
+  wider use than an invited pilot needs a paid key.
+- **One question at a time.** The models and the API client serve one
+  request at a time, so questions asked together wait in turn.
+- **Pinning.** The Gemini models are hosted and may change. The service
+  downloads the current bge-m3 and reranker, and does not check that
+  bge-m3 is the revision the stored vectors were made with.
+- **Reproducing.** The documents, their OCR and the chunks are not
+  redistributed, so the numbers can be rebuilt only from the same PDFs,
+  which `data/SHA256SUMS` identifies.
+
+## What comes next
+
+1. **Phase 2:** fine-tune a small open model on the corpus, with a leakage
+   check, and run arms D and E against arm C on the same model, with T6.
+2. **Three changes the held-out run pointed to,** each to be tried on new
+   questions: keep the first decline when both tries decline, add each
+   source's neighbouring chunks, and ask again when an answer's language
+   differs from the question's.
+3. **A gold_v2,** with the mistakes found in gold_v1 corrected and new
+   held-out questions.
+4. **Attachments,** such as a student's own schedule, read by a local model,
+   so that nothing personal leaves the machine.
+
+## How it works
+
+The sections below follow the documents from PDF to answer, with what each
+step was measured to buy. Numbers are on the development questions unless
+they say otherwise.
+
+### Why this is not a "chat with your PDF" project
 
 Measuring the corpus before building anything turned up extraction damage that
 no naive pipeline would notice. `daleel inventory data/raw/` reports it, and
@@ -71,7 +302,7 @@ Five failure modes sit behind those numbers:
    no usable character map, so its text layer holds Ethiopic and Canadian
    Syllabics letters instead of Arabic.
 
-### The failure signature depends on the extraction backend
+#### The failure signature depends on the extraction backend
 
 The first five documents, read with pdfplumber and with poppler's `pdftotext`:
 
@@ -103,7 +334,7 @@ gives 1,690 words through pdfplumber and 359 through pypdfium2, from the same
 1,846 letters. With its tolerances scaled to the page, pdfplumber gives 360.
 `scripts/inspect_pages.py` shows this for any page.
 
-### Provenance
+#### Provenance
 
 The 1448 academic calendar first added to the corpus turned out, on reading its
 footer, to be an unofficial student redesign that states it does not represent
@@ -131,7 +362,7 @@ removed.
 Every document's SHA-256 is recorded in [`data/SHA256SUMS`](data/SHA256SUMS),
 and `sha256sum -c data/SHA256SUMS` checks a local copy against it.
 
-## Extraction routing
+### Extraction routing
 
 `daleel route data/raw/` predicts, for each document, which extraction path to
 try first and which failure to expect, from the software recorded in its
@@ -166,7 +397,7 @@ and routed correctly. The regulations carry no metadata at all, and an online
 compressor rewrote the portal guide's producer and creator, so both took the
 default, and the gate then trusted their text layers.
 
-## Quality gate
+### Quality gate
 
 `daleel gate data/raw/` judges every page: can its text layer be trusted, or
 must the page go to OCR? It extracts text with pypdfium2, normalizes it, and
@@ -195,7 +426,7 @@ guide over rare real words. Those limitations, the evidence behind every
 threshold, and how to reproduce each number are in
 [`eval/results/gate_calibration.md`](eval/results/gate_calibration.md).
 
-## Extraction
+### Extraction
 
 `daleel extract data/raw/` turns every page into a record: its text, the
 method that produced it, and the gate's evidence for the choice. A page keeps
@@ -233,7 +464,7 @@ in [`eval/results/ocr.md`](eval/results/ocr.md): 22 seconds a page at the
 median, and 139 seconds at most, for a page of the regulations drawn without a
 text layer. Two library slides were read again for their text.
 
-## Calendar
+### Calendar
 
 The academic calendar answers what students ask most often: when drop and add
 closes, when exams start. The gate trusts its text layer, and PDFium reads
@@ -275,7 +506,7 @@ The later pages' quirks stay as printed, as ground truth keeps them: page 2's
 before a date's suffix, and a Hijri range over two lines, each a full date
 with its own suffix. The checks read all of these.
 
-## Chunking
+### Chunking
 
 `daleel chunk` cuts the records into chunks along the documents' own
 structure, since a chunk cut through the middle of a clause cites nothing. A
@@ -317,7 +548,7 @@ document's title, scope and date, the chunk's page, heading and clause number,
 whether it is a clause, prose or a table, and how its page was extracted, so a
 wrong answer can be traced back to its page.
 
-## Gold set
+### Gold set
 
 [`eval/gold_v1.jsonl`](eval/gold_v1.jsonl) holds the 80 questions that
 retrieval and answers are measured on: 28 asked by classmates, one by the
@@ -335,7 +566,7 @@ of a held-out question is among the other 60, and each type is held out in
 its share of the set (`choose_final` in `daleel.eval.gold`, seed 1448). Of the
 72 questions the corpus answers, 54 are for development and 18 are held out.
 
-## Retrieval
+### Retrieval
 
 The gold set names pages and quotes, not chunks, so the evidence a question
 needs is found anew for every way of chunking: a chunk holds a quote when the
@@ -400,6 +631,81 @@ last row was chosen on the development questions; on the 18 held out, run
 once afterwards, it puts 91% of the evidence in the first five, against
 BM25's 78%. Of the 4 English questions, BM25 finds evidence for 2, and the
 last row for all 4.
+
+### Answering
+
+`daleel serve` answers each question with a LangGraph flow
+([`src/daleel/answer/flow.py`](src/daleel/answer/flow.py)):
+
+1. **Retrieve.** The question is searched as asked, with T4's chosen
+   retrieval: BM25 and bge-m3, fused, and the first 20 reranked. Rewriting
+   it into search queries first found less evidence on dev, so the flow does
+   not rewrite ([rewrite.md](eval/results/rewrite.md)).
+2. **Refuse early.** If the reranker's best score among the five sources is
+   below -4.0, retrieval found nothing close to the question, and the flow
+   refuses without asking the model. The line sits a logit below every dev
+   question that should be answered ([refusal.md](eval/results/refusal.md)).
+3. **Generate.** `gemini-3.5-flash-lite` gets the five sources, numbered,
+   each with its document, date, scope, page, section and clause, and arm C's
+   prompt: use only the sources; cite them by number after every rule,
+   number, date or step; name exactly what the sources leave out; where
+   documents disagree, give each and do not choose; copy numbers as printed;
+   and answer in the question's language.
+4. **Verify.** The answer must cite, and cite only sources it was given. If
+   it does not, or it declines, the flow asks once more with ten sources.
+   After that, a decline stands, and anything else is refused with a fixed
+   sentence.
+
+A question about today's date or the current week, such as "which week are
+we in?", also gets a source computed from the academic calendar
+([`src/daleel/answer/today.py`](src/daleel/answer/today.py)): today's date
+in Riyadh, in Gregorian and Umm al-Qura dates, and every week of the 1448
+semesters, counted from each semester's first day.
+
+Four arms are compared on the same model: A, the question alone; B, the
+whole corpus in the model's context; C, the flow's first request alone; and
+the flow. The judge, `gemma-4-31b-it` with a rubric checked against hand
+labels, reads each answer beside the reference answer and the evidence
+quotes. The dev runs are in [answers.md](eval/results/answers.md), the
+held-out run in [held_out.md](eval/results/held_out.md), and the judge's
+check in [judge_agreement.md](eval/judge_agreement.md).
+
+### The service
+
+`daleel serve`, or the Docker service, listens on port 8000, on this machine
+alone unless told otherwise:
+
+| Endpoint | What it gives |
+|---|---|
+| `GET /` | The page: a conversation in Arabic, right to left, whose cited passages open beside the answers |
+| `POST /ask` with `{"question": "..."}` | The answer, as server-sent events |
+| `POST /search` with `{"query": "...", "k": 5}` | The chunks retrieval ranks first, without asking the model |
+| `GET /health` | `{"status": "ok", "chunks": 768}` |
+| `GET /metrics` | Prometheus counts: questions by outcome, seconds per question, model tokens, searches |
+
+`/ask` sends a `step` event as each step of the flow ends, then an `answer`
+event, or an `error` event if the model cannot be reached:
+
+```text
+event: step
+data: {"step": "retrieve"}
+
+event: answer
+data: {"answer": "... [1]", "outcome": "answered", "reason": "", "language": "ar", "sources": [{"n": 1, "chunk_id": "...", "doc_id": "...", "doc_title": "...", "page": 30, "section_heading": "...", "text": "..."}]}
+```
+
+The answer comes whole, not word by word, because it is not shown before its
+citations are checked. `outcome` is `answered`, `declined` or `refused`, and
+`sources` holds only the sources the answer cites, under the numbers it cites
+them by.
+
+Questions are redacted as they arrive: email addresses and long numbers,
+such as student and phone numbers, become `[redacted]`
+([`src/daleel/serve/privacy.py`](src/daleel/serve/privacy.py)). The query log,
+`data/serve/queries.jsonl`, keeps each redacted question with its answer, its
+sources and the hour, and nothing about who asked; no access log is written.
+The page keeps a conversation in the browser tab alone, until the tab is
+closed.
 
 ## Usage
 
@@ -467,59 +773,6 @@ can be compared. It brings PyTorch with it: on a GPU, install the PyTorch
 build for your CUDA version first, as <https://pytorch.org> shows, or pip may
 bring one that does not use the GPU. The encoders are MIT-licensed and the
 reranker Apache-2.0.
-
-## Results
-
-The extraction inventory above (table T1), the quality gate's calibration in
-[`eval/results/gate_calibration.md`](eval/results/gate_calibration.md), and the
-OCR engines compared in [`eval/results/ocr.md`](eval/results/ocr.md) (table T2):
-dots.mocr, a vision language model, reads Arabic about three times as
-accurately as Tesseract or PaddleOCR, and invented a second date in every date
-box of the academic calendar. The calendar's events are rebuilt from its text
-layer instead, and its first page matches its ground truth cell for cell
-([Calendar](#calendar)). Retrieval with BM25 is measured in
-[`eval/results/retrieval.md`](eval/results/retrieval.md) (table T3): 84% of
-the development questions' evidence among the first five results, against
-15% for a naive pipeline. Fused with bge-m3 and reranked by
-bge-reranker-v2-m3 (table T4), retrieval puts 93% there, and 91% of the
-held-out questions' evidence against BM25's 78%, in 238 ms per question
-at the median on an RTX 3060 Ti. The arm comparison lands here as that work
-completes. Nothing is published here before it is measured.
-
-## Prediction
-
-Stated on 9 October 2026, before any arm that answers questions was run.
-
-The study compares five ways of answering: A, a model without the
-documents; B, the whole corpus in the model's context; C, this pipeline,
-retrieving clauses for the model to answer from; D, a model fine-tuned on
-the corpus, without retrieval; E, the fine-tuned model with retrieval. Each
-comparison holds the model fixed. Arms A to C use `gemini-3.5-flash-lite`
-through Google's API, and arms A, C, D and E then run on one small
-open-weight model, which unlike an API model can be fine-tuned.
-
-1. **Arm A answers almost nothing.** Without the documents the model may
-   know the general shape of Saudi college rules, but not these colleges'
-   numbers. It will get few numeric questions exactly right, and it will
-   state wrong values rather than say it does not know.
-2. **Arm B comes close to arm C on accuracy, but not on citations or cost.**
-   With the whole corpus in its context it can find most answers, within
-   about 10 points of arm C's accuracy. But it has to name the page itself,
-   so fewer of its citations will hold the answer, and each question will
-   cost it about 50 times arm C's input tokens.
-3. **Arm C leads on valid citations and exact numbers,** and declines the
-   questions the corpus does not answer.
-4. **Retrieval beats fine-tuning on knowledge.** Fine-tuning teaches form
-   and behaviour far better than it teaches specific numbers. For a corpus
-   of precise thresholds, such as a cumulative average of 3.75 out of 4.00,
-   or fees of 250, 750 and 1,100 per credit unit, arm D will answer fluently
-   and with wrong values. Arm E may beat arm C on behaviour (register,
-   structure, declining what it cannot answer) while matching it on
-   knowledge: retrieval for facts, fine-tuning for form.
-
-With 72 answerable questions, differences under about 10 points are not
-findings. Each prediction will be marked here as held or not held, with its
-numbers, once its arms have run.
 
 ## Licence
 

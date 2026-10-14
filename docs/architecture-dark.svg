@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 690" width="1100" height="690" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title description">
+  <title id="title">How Daleel answers a question</title>
+  <desc id="description">Built once: nine PDFs pass a quality gate that sends each page to its text layer or to OCR, the calendar is rebuilt from its layout, and a chunker cuts 768 chunks, indexed for BM25 and as bge-m3 vectors. For each question: retrieval fuses BM25 and bge-m3 and reranks the first 20; a question whose best score is below -4.0 is refused; otherwise gemini-3.5-flash-lite answers from five numbered sources, and an answer that cites only those sources is returned. An answer that declines or cites wrongly is asked again once with ten sources; then a decline stands and anything else is refused.</desc>
+  <defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#656c76"/></marker></defs>
+  <rect x="10" y="10" width="1080" height="300" rx="16" fill="#151b23" stroke="#3d444d"/>
+  <text x="34" y="40" font-size="12" fill="#4493f8" font-weight="700" letter-spacing="1.2">BUILT ONCE, OFFLINE</text>
+  <text x="1066" y="40" font-size="12" fill="#9198a1" text-anchor="end">a GPU for OCR and the vectors</text>
+  <rect x="30" y="119" width="130" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(81.0 133) scale(1.16667)" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M9 13h6 M9 17h6" fill="none" stroke="#4493f8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="95.0" y="185" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">9 PDFs</text>
+  <text x="95.0" y="206" font-size="13" fill="#9198a1" text-anchor="middle">257 pages</text>
+  <rect x="200" y="119" width="160" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(266.0 133) scale(1.16667)" d="M12 3l7 3v5c0 4.5-3 8-7 10c-4-2-7-5.5-7-10V6z M9 12l2 2l4-4" fill="none" stroke="#4493f8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="280.0" y="185" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">Quality gate</text>
+  <text x="280.0" y="206" font-size="13" fill="#9198a1" text-anchor="middle">is each page's</text>
+  <text x="280.0" y="222" font-size="13" fill="#9198a1" text-anchor="middle">text layer sound?</text>
+  <rect x="430" y="61" width="200" height="58" rx="12" fill="#212830" stroke="#3d444d"/>
+  <path transform="translate(444 78) scale(1)" d="M5 7V5h14v2 M12 5v14 M9 19h6" fill="none" stroke="#4493f8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="480" y="87" font-size="14" fill="#f0f6fc" font-weight="600">Text layer</text>
+  <text x="480" y="104" font-size="12" fill="#9198a1">pypdfium2, 177 pages</text>
+  <rect x="430" y="146" width="200" height="58" rx="12" fill="#212830" stroke="#3d444d"/>
+  <path transform="translate(444 163) scale(1)" d="M4 8V6a2 2 0 0 1 2-2h2 M16 4h2a2 2 0 0 1 2 2v2 M20 16v2a2 2 0 0 1-2 2h-2 M8 20H6a2 2 0 0 1-2-2v-2 M7 12h10" fill="none" stroke="#4493f8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="480" y="172" font-size="14" fill="#f0f6fc" font-weight="600">OCR</text>
+  <text x="480" y="189" font-size="12" fill="#9198a1">dots.mocr, 80 pages</text>
+  <rect x="430" y="231" width="200" height="58" rx="12" fill="#212830" stroke="#3d444d"/>
+  <path transform="translate(444 248) scale(1)" d="M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M3 10h18 M8 3v4 M16 3v4 M7 14h4 M7 17h7" fill="none" stroke="#4493f8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="480" y="257" font-size="14" fill="#f0f6fc" font-weight="600">Calendar</text>
+  <text x="480" y="274" font-size="12" fill="#9198a1">cards rebuilt from layout</text>
+  <rect x="670" y="119" width="170" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(741.0 133) scale(1.16667)" d="M9 6a3 3 0 1 1-6 0a3 3 0 1 1 6 0z M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0z M20 4L8.1 15.9 M14.5 14.5L20 20 M8.1 8.1L12 12" fill="none" stroke="#4493f8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="755.0" y="185" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">Chunker</text>
+  <text x="755.0" y="206" font-size="13" fill="#9198a1" text-anchor="middle">cut at clauses, a</text>
+  <text x="755.0" y="222" font-size="13" fill="#9198a1" text-anchor="middle">table row a sentence</text>
+  <rect x="880" y="119" width="190" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(961.0 133) scale(1.16667)" d="M20 5c0 1.7-3.6 3-8 3s-8-1.3-8-3s3.6-3 8-3s8 1.3 8 3z M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" fill="none" stroke="#4493f8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="975.0" y="185" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">768 chunks</text>
+  <text x="975.0" y="206" font-size="13" fill="#9198a1" text-anchor="middle">a BM25 index and</text>
+  <text x="975.0" y="222" font-size="13" fill="#9198a1" text-anchor="middle">bge-m3 vectors</text>
+  <path d="M160 175 H200" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M360 175 H390 V90 H430" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M360 175 H430" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M95 231 V260 H430" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M630 90 H648 V175" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M630 260 H648 V175" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M630 175 H670" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M840 175 H880" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="410" y="84" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">yes</text>
+  <text x="410" y="169" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">no</text>
+  <text x="262" y="254" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">the calendar's PDF</text>
+  <rect x="10" y="350" width="1080" height="330" rx="16" fill="#151b23" stroke="#3d444d"/>
+  <text x="34" y="380" font-size="12" fill="#ab7df8" font-weight="700" letter-spacing="1.2">PER QUESTION</text>
+  <text x="1066" y="380" font-size="12" fill="#9198a1" text-anchor="end">daleel serve, with the Gemini API</text>
+  <rect x="25" y="424" width="120" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(71.0 438) scale(1.16667)" d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.4A8 8 0 1 1 21 12z M10 9.6a2 2 0 1 1 3 1.7c-.6.4-1 .8-1 1.5 M12 15.6v.1" fill="none" stroke="#ab7df8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="85.0" y="490" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">Question</text>
+  <text x="85.0" y="511" font-size="13" fill="#9198a1" text-anchor="middle">redacted</text>
+  <text x="85.0" y="527" font-size="13" fill="#9198a1" text-anchor="middle">on arrival</text>
+  <rect x="179" y="424" width="175" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(252.5 438) scale(1.16667)" d="M18 11a7 7 0 1 1-14 0a7 7 0 1 1 14 0z M20 20l-4-4" fill="none" stroke="#ab7df8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="266.5" y="490" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">Retrieval</text>
+  <text x="266.5" y="511" font-size="13" fill="#9198a1" text-anchor="middle">BM25 + bge-m3, fused,</text>
+  <text x="266.5" y="527" font-size="13" fill="#9198a1" text-anchor="middle">the first 20 reranked</text>
+  <rect x="388" y="424" width="135" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(441.5 438) scale(1.16667)" d="M4 17a8 8 0 0 1 16 0 M12 17l4-5 M4 17h2 M18 17h2 M12 9v2" fill="none" stroke="#ab7df8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="455.5" y="490" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">Close enough?</text>
+  <text x="455.5" y="511" font-size="13" fill="#9198a1" text-anchor="middle">best reranker</text>
+  <text x="455.5" y="527" font-size="13" fill="#9198a1" text-anchor="middle">score &#8805; -4.0</text>
+  <rect x="557" y="424" width="190" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(638.0 438) scale(1.16667)" d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="none" stroke="#ab7df8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="652.0" y="490" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">gemini-3.5-flash-lite</text>
+  <text x="652.0" y="511" font-size="13" fill="#9198a1" text-anchor="middle">answers from five</text>
+  <text x="652.0" y="527" font-size="13" fill="#9198a1" text-anchor="middle">numbered sources</text>
+  <rect x="781" y="424" width="130" height="112" rx="12" fill="#212830" stroke="#3d444d" stroke-width="1"/>
+  <path transform="translate(832.0 438) scale(1.16667)" d="M21 12a9 9 0 1 1-18 0a9 9 0 1 1 18 0z M8.5 12.5l2.5 2.5l4.5-5" fill="none" stroke="#ab7df8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="846.0" y="490" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">Verify</text>
+  <text x="846.0" y="511" font-size="13" fill="#9198a1" text-anchor="middle">cites only the</text>
+  <text x="846.0" y="527" font-size="13" fill="#9198a1" text-anchor="middle">sources it got?</text>
+  <rect x="945" y="424" width="130" height="112" rx="12" fill="#12261e" stroke="#3fb950" stroke-width="1.5"/>
+  <path transform="translate(996.0 438) scale(1.16667)" d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.4A8 8 0 1 1 21 12z M9 12l2 2l4-4" fill="none" stroke="#3fb950" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1010.0" y="490" font-size="15" fill="#f0f6fc" font-weight="600" text-anchor="middle">Answer</text>
+  <text x="1010.0" y="511" font-size="13" fill="#9198a1" text-anchor="middle">with the passages</text>
+  <text x="1010.0" y="527" font-size="13" fill="#9198a1" text-anchor="middle">it cites</text>
+  <rect x="380" y="583" width="150" height="58" rx="12" fill="#212830" stroke="#3d444d" stroke-dasharray="5 4"/>
+  <path transform="translate(394 600) scale(1)" d="M21 12a9 9 0 1 1-18 0a9 9 0 1 1 18 0z M5.7 5.7l12.6 12.6" fill="none" stroke="#9198a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="430" y="609" font-size="14" fill="#f0f6fc" font-weight="600">Refusal</text>
+  <text x="430" y="626" font-size="12" fill="#9198a1">a fixed sentence</text>
+  <rect x="850" y="583" width="175" height="58" rx="12" fill="#212830" stroke="#3d444d" stroke-dasharray="5 4"/>
+  <path transform="translate(864 600) scale(1)" d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.4A8 8 0 1 1 21 12z M9 12h6" fill="none" stroke="#9198a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="900" y="609" font-size="14" fill="#f0f6fc" font-weight="600">Decline</text>
+  <text x="900" y="626" font-size="12" fill="#9198a1">in the model's words</text>
+  <path d="M975 231 V334 H225 V424" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="600" y="326" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">the chunks and their vectors</text>
+  <path d="M145 480 H179" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M354 480 H388" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M523 480 H557" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="540" y="472" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">yes</text>
+  <path d="M455 536 V583" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="463" y="566" font-size="12" fill="#9198a1" text-anchor="start" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">no</text>
+  <path d="M747 480 H781" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <path d="M911 480 H945" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="928" y="472" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">yes</text>
+  <path d="M846 424 V404 H310 V424" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="578" y="398" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">declines or cites wrongly: once more, with ten sources</text>
+  <path d="M890 536 V583" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="898" y="566" font-size="12" fill="#9198a1" text-anchor="start" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">declines again</text>
+  <path d="M800 536 V612 H530" fill="none" stroke="#656c76" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#head)"/>
+  <text x="665" y="606" font-size="12" fill="#9198a1" text-anchor="middle" stroke="#151b23" stroke-width="4" paint-order="stroke" stroke-linejoin="round">fails again</text>
+</svg>
