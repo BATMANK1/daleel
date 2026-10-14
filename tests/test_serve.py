@@ -387,5 +387,7 @@ def test_the_page_sends_the_code_its_invitation_link_carries() -> None:
     page = service(Model()).get("/").text
     # The code comes after #, which the browser never sends to the server.
     assert "location.hash" in page
+    # Also when the code is added to the address of a page already open.
+    assert 'addEventListener("hashchange"' in page
     assert '"X-Access-Code"' in page
     assert "response.status === 401" in page

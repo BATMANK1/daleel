@@ -404,16 +404,20 @@
 
   // An invitation link carries the access code after #, a part of the address that is
   // never sent to the server. It is remembered on this device and taken out of the
-  // address bar.
+  // address bar. A code put into the address of a page already open comes without a
+  // reload, so it is taken when the address changes too.
   const CODE = "daleel.code";
   let code = "";
   try { code = localStorage.getItem(CODE) || ""; } catch { code = ""; }
-  const invited = new URLSearchParams(location.hash.slice(1)).get("code");
-  if (invited) {
+  const takeCode = () => {
+    const invited = (new URLSearchParams(location.hash.slice(1)).get("code") || "").trim();
+    if (!invited) return;
     code = invited;
     try { localStorage.setItem(CODE, code); } catch {}
     history.replaceState(null, "", location.pathname + location.search);
-  }
+  };
+  takeCode();
+  addEventListener("hashchange", takeCode);
 
   // The conversation lives in this tab only, and is gone when the tab is closed.
   let turns = [];
