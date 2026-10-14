@@ -1,0 +1,17 @@
+# The pilot: Daleel for invited users, who must send the access code that their
+# invitation link carries. Set DALEEL_ACCESS_CODE in .env first (README, "The
+# pilot"), then start the service with this file added:
+#
+#   docker compose -f compose.yaml -f compose.pilot.yaml --profile gpu up --build -d
+#
+# The service still listens on this machine alone. Tailscale Funnel, run beside it,
+# is what brings the invited users in.
+x-pilot: &pilot
+  environment:
+    DALEEL_ACCESS_CODE: ${DALEEL_ACCESS_CODE:?set DALEEL_ACCESS_CODE in .env for the pilot}
+
+services:
+  gpu:
+    <<: *pilot
+  cpu:
+    <<: *pilot

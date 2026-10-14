@@ -6,11 +6,13 @@ because an answer is not shown before its citations are verified.
 
 Every question and query is redacted as it arrives (daleel.serve.privacy),
 and the query log keeps what was asked and answered, with the hour, and
-nothing about who asked.
+nothing about who asked. Opened to invited users, the service answers only
+requests that send the access code they were given.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import threading
 import time
@@ -19,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import (
@@ -88,10 +90,13 @@ def create_app(
     log: Path | None = None,
     clock: Callable[[], float] = time.monotonic,
     when: Callable[[str], Mapping[str, Any] | None] | None = None,
+    code: str | None = None,
 ) -> FastAPI:
     """The service over the chunks. `search`, `ask`, `confidence`, `threshold` and `when`
     are as build_flow takes them. Each question is appended to `log`, where one is given.
-    `clock` times each question, read once when it arrives and once when it is answered."""
+    `clock` times each question, read once when it arrives and once when it is answered.
+    Where `code` is given, /ask, /search and /metrics answer only a request that sends
+    it in the X-Access-Code header."""
     flow = build_flow(search, chunks, ask, confidence=confidence, threshold=threshold, when=when)
     by_id = {chunk["chunk_id"]: chunk for chunk in chunks}
     # The model client and the models serve one request at a time.
@@ -174,7 +179,24 @@ def create_app(
             },
         )
 
-    app = FastAPI(title="Daleel", summary="Cited answers from RCJY college regulations")
+    def allowed(x_access_code: Annotated[str | None, Header()] = None) -> None:
+        """Lets a request through when no code is set, or when it sends the code."""
+        if code is None:
+            return
+        sent = (x_access_code or "").encode()
+        if not hmac.compare_digest(sent, code.encode()):
+            raise HTTPException(status_code=401, detail="an access code is needed")
+
+    guarded = [Depends(allowed)]
+    # No generated API pages: the README describes the API, and the service may be
+    # open to the internet.
+    app = FastAPI(
+        title="Daleel",
+        summary="Cited answers from RCJY college regulations",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     # The page's fonts, served from here so that the page loads nothing from other sites.
     app.mount("/static", StaticFiles(directory=PAGE.parent), name="static")
 
@@ -186,7 +208,7 @@ def create_app(
     def health() -> dict[str, Any]:
         return {"status": "ok", "chunks": len(chunks)}
 
-    @app.post("/search")
+    @app.post("/search", dependencies=guarded)
     def find(body: Find) -> dict[str, Any]:
         with busy:
             ids = search(redact(body.query), body.k)
@@ -198,11 +220,11 @@ def create_app(
             ]
         }
 
-    @app.post("/ask")
+    @app.post("/ask", dependencies=guarded)
     def ask_question(body: Ask) -> StreamingResponse:
         return StreamingResponse(answer(redact(body.question)), media_type="text/event-stream")
 
-    @app.get("/metrics")
+    @app.get("/metrics", dependencies=guarded)
     def metrics() -> Response:
         return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 

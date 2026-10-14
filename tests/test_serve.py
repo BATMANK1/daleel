@@ -343,3 +343,49 @@ def test_an_english_question_is_answered_with_its_cited_sources_in_order() -> No
     found = events(response.text)
     assert found[-1][1]["language"] == "en"
     assert [source["n"] for source in sources_of(found)] == [3, 1]
+
+
+CODE = "pilot-code-0123"
+
+
+def test_with_an_access_code_only_requests_that_send_it_are_answered(tmp_path: Path) -> None:
+    model = Model("رسوم الوحدة 250 ريالاً [1].")
+    search = Search()
+    log = tmp_path / "queries.jsonl"
+    client = service(model, search, log=log, code=CODE)
+    asked = {"question": QUESTION}
+    for headers in ({}, {"X-Access-Code": "pilot-code-0124"}, {"X-Access-Code": ""}):
+        assert client.post("/ask", json=asked, headers=headers).status_code == 401
+        assert client.post("/search", json={"query": "رسوم"}, headers=headers).status_code == 401
+        assert client.get("/metrics", headers=headers).status_code == 401
+    # Turned away before the flow: nothing searched, asked or logged.
+    assert search.calls == [] and model.asked == [] and not log.exists()
+
+    allowed = {"X-Access-Code": CODE}
+    response = client.post("/ask", json=asked, headers=allowed)
+    assert response.status_code == 200 and events(response.text)[-1][0] == "answer"
+    assert client.post("/search", json={"query": "رسوم"}, headers=allowed).status_code == 200
+    assert client.get("/metrics", headers=allowed).status_code == 200
+    # The page and the health check need no code: they hold nothing from the documents.
+    assert client.get("/").status_code == 200
+    assert client.get("/health").status_code == 200
+
+
+def test_without_an_access_code_no_request_needs_one() -> None:
+    client = service(Model("رسوم الوحدة 250 ريالاً [1]."))
+    assert client.post("/ask", json={"question": QUESTION}).status_code == 200
+    assert client.get("/metrics").status_code == 200
+
+
+def test_the_service_publishes_no_generated_api_pages() -> None:
+    client = service(Model(), code=CODE)
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+
+
+def test_the_page_sends_the_code_its_invitation_link_carries() -> None:
+    page = service(Model()).get("/").text
+    # The code comes after #, which the browser never sends to the server.
+    assert "location.hash" in page
+    assert '"X-Access-Code"' in page
+    assert "response.status === 401" in page

@@ -75,5 +75,9 @@ jobs:
           "
           docker run --rm daleel:ci daleel serve --help
 
-      - name: Check the compose file
-        run: GEMINI_API_KEY=unused docker compose --profile gpu --profile cpu config --quiet
+      - name: Check the compose files
+        run: |
+          GEMINI_API_KEY=unused docker compose --profile gpu --profile cpu config --quiet
+          GEMINI_API_KEY=unused DALEEL_ACCESS_CODE=unused-in-ci-0000 \
+            docker compose -f compose.yaml -f compose.pilot.yaml --profile gpu --profile cpu \
+            config --quiet
