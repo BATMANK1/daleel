@@ -400,6 +400,20 @@
   const NOT_ANSWERED = "جرّب صياغة أخرى أو سؤالًا أدق، أو اسأل شؤون الطلاب في كليتك.";
   const DROPPED = "انقطع الاتصال قبل أن تكتمل الإجابة.";
   const REJECTED = "اكتب سؤالًا من حرف واحد إلى 500 حرف.";
+  const LOCKED = "هذه تجربة بالدعوة. افتح الرابط الذي وصلك في الدعوة، ثم اسأل.";
+
+  // An invitation link carries the access code after #, a part of the address that is
+  // never sent to the server. It is remembered on this device and taken out of the
+  // address bar.
+  const CODE = "daleel.code";
+  let code = "";
+  try { code = localStorage.getItem(CODE) || ""; } catch { code = ""; }
+  const invited = new URLSearchParams(location.hash.slice(1)).get("code");
+  if (invited) {
+    code = invited;
+    try { localStorage.setItem(CODE, code); } catch {}
+    history.replaceState(null, "", location.pathname + location.search);
+  }
 
   // The conversation lives in this tab only, and is gone when the tab is closed.
   let turns = [];
@@ -594,13 +608,20 @@
     fill(turn, turn.element);
     let finished = false;
     try {
+      const headers = { "Content-Type": "application/json" };
+      if (code) headers["X-Access-Code"] = code;
       const response = await fetch("/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ question: turn.question }),
       });
       if (response.status === 422) {
         turn.error = REJECTED;
+        finished = true;
+        return;
+      }
+      if (response.status === 401) {
+        turn.error = LOCKED;
         finished = true;
         return;
       }

@@ -83,6 +83,7 @@ def served(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(load, "load_reranker", lambda *args: Reranker())
     monkeypatch.setattr(load, "Client", FakeClient)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("DALEEL_ACCESS_CODE", raising=False)
     FakeClient.made = []
     ran: dict[str, Any] = {}
 
@@ -171,4 +172,27 @@ def test_serve_stops_before_loading_anything_when_it_cannot_write_its_log(
     argv = [*served["argv"], "--log", str(blocked / "queries.jsonl")]
     assert cli.main(argv) == 2
     assert "mkdir -p data/serve" in capsys.readouterr().err
+    assert served["ran"] == {} and FakeClient.made == []
+
+
+def test_serve_answers_only_with_the_access_code_when_one_is_set(
+    served: dict, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("DALEEL_ACCESS_CODE", "  pilot-code-0123  ")
+    assert cli.main(served["argv"]) == 0
+    assert "DALEEL_ACCESS_CODE" in capsys.readouterr().err
+    client = TestClient(served["ran"]["app"])
+    assert client.post("/ask", json={"question": ASKED}).status_code == 401
+    # Read with the spaces around it taken off, as a line of .env may have them.
+    sent = {"X-Access-Code": "pilot-code-0123"}
+    allowed = client.post("/ask", json={"question": ASKED}, headers=sent)
+    assert answer_of(allowed.text)["outcome"] == "answered"
+
+
+def test_serve_refuses_an_access_code_too_short_to_be_safe(
+    served: dict, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("DALEEL_ACCESS_CODE", "short")
+    assert cli.main(served["argv"]) == 2
+    assert "token_urlsafe" in capsys.readouterr().err
     assert served["ran"] == {} and FakeClient.made == []

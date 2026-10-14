@@ -37,7 +37,7 @@ from daleel.ingest.router import ExtractionPath, route
 from daleel.ocr import dots
 from daleel.ocr.cache import CACHE, CachedReader
 from daleel.retrieve.dense import DENSE
-from daleel.serve import QUERIES, REPLIES
+from daleel.serve import ACCESS_CODE, MIN_CODE, QUERIES, REPLIES
 
 # --- shared ------------------------------------------------------------------
 
@@ -713,7 +713,9 @@ def _add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
             "answering flow over HTTP: the page at /, and /ask, /search, /health and "
             "/metrics. Each question is logged to LOG with the hour, never the minute, "
             "and with nothing about who asked. Requests are not logged at all, since "
-            "an access log would hold the address of whoever asked."
+            "an access log would hold the address of whoever asked. With "
+            f"{ACCESS_CODE} set in the environment, only requests that send that code "
+            "are answered."
         ),
     )
     parser.add_argument(
@@ -752,6 +754,14 @@ def _run_serve(args: argparse.Namespace) -> int:
     from daleel.answer.llm import LlmError, api_key
     from daleel.serve.load import load_app
 
+    code = os.environ.get(ACCESS_CODE, "").strip() or None
+    if code is not None and len(code) < MIN_CODE:
+        print(
+            f"error: {ACCESS_CODE} must be at least {MIN_CODE} characters. Make one with: "
+            "python3 -c 'import secrets; print(secrets.token_urlsafe(12))'",
+            file=sys.stderr,
+        )
+        return 2
     if not args.chunks.is_file():
         print(f"error: no chunks at {args.chunks}. Build them with: daleel chunk", file=sys.stderr)
         return 2
@@ -782,8 +792,10 @@ def _run_serve(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-    app = load_app(args.chunks, args.dense, args.device, args.log, args.replies)
+    app = load_app(args.chunks, args.dense, args.device, args.log, args.replies, code)
     print(f"Daleel is at http://{args.host}:{args.port}/", file=sys.stderr)
+    if code is not None:
+        print(f"Only requests that send the code in {ACCESS_CODE} are answered.", file=sys.stderr)
     uvicorn.run(app, host=args.host, port=args.port, access_log=False, server_header=False)
     return 0
 

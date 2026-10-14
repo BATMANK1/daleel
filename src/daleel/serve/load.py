@@ -26,9 +26,11 @@ def load_app(
     device: str | None = None,
     log: Path | None = QUERIES,
     replies: Path = REPLIES,
+    code: str | None = None,
 ) -> FastAPI:
     """The service over the chunks, with T4's chosen retrieval, the confidence gate and
-    the answering flow, its models on `device` (the GPU where there is one)."""
+    the answering flow, its models on `device` (the GPU where there is one). With
+    `code`, only requests that send it are answered."""
     found = read_chunks(chunks)
     encoder = ENCODERS["bge-m3"]
     model = load_model(encoder, device)
@@ -49,4 +51,5 @@ def load_app(
         log=log,
         # Questions about time get the calendar's weeks, opening with today in Riyadh.
         when=calendar_source(found),
+        code=code,
     )

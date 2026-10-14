@@ -38,3 +38,17 @@ def test_compose_mounts_the_data_read_only_and_listens_on_this_machine_alone() -
         assert service["environment"]["GEMINI_API_KEY"].startswith("${GEMINI_API_KEY:?")
     gpu = services["gpu"]["deploy"]["resources"]["reservations"]["devices"]
     assert gpu == [{"driver": "nvidia", "count": "all", "capabilities": ["gpu"]}]
+
+
+def test_only_the_pilot_compose_file_asks_for_an_access_code_and_it_cannot_start_without_one() -> (
+    None
+):
+    base = yaml.safe_load((ROOT / "compose.yaml").read_text(encoding="utf-8"))
+    for name, service in base["services"].items():
+        assert "DALEEL_ACCESS_CODE" not in service["environment"], name
+    pilot = yaml.safe_load((ROOT / "compose.pilot.yaml").read_text(encoding="utf-8"))
+    assert set(pilot["services"]) == {"gpu", "cpu"}
+    for name, service in pilot["services"].items():
+        # Only the code: the pilot opens no port and adds no service.
+        assert set(service) == {"environment"}, name
+        assert service["environment"]["DALEEL_ACCESS_CODE"].startswith("${DALEEL_ACCESS_CODE:?")

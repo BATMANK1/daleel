@@ -103,6 +103,25 @@ served by vLLM as [`eval/results/ocr.md`](eval/results/ocr.md) shows. On an
 RTX 3060 Ti it read the 80 such pages in 48 minutes. `daleel serve` reads
 `GEMINI_API_KEY` from the environment or from `.env`.
 
+**For invited users**, as in the pilot, the service stays on this machine and
+[Tailscale Funnel](https://tailscale.com/kb/1223/funnel) gives it a public
+HTTPS address, with TLS ending here. Only requests that send the access code
+are answered. The invitation link carries it after `#`, a part of the address
+the browser never sends to a server, and the page keeps it on the device:
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(12))'   # set it in .env as DALEEL_ACCESS_CODE
+docker compose -f compose.yaml -f compose.pilot.yaml --profile gpu up --build -d
+curl -fsSL https://tailscale.com/install.sh | sh                # once
+sudo tailscale up --hostname daleel                              # once: log in at the link it prints
+sudo tailscale funnel --bg 8000                                  # prints https://daleel.<tailnet>.ts.net
+```
+
+The invitation is `https://daleel.<tailnet>.ts.net/#code=<the code>`, and
+`sudo tailscale funnel reset` closes the address again. `compose.pilot.yaml`
+will not start the service without a code. The questions still go to the
+Gemini API's free tier ([Limitations](#limitations)).
+
 ## Results
 
 Every design choice was made on 60 development questions. The 20 held-out
@@ -682,6 +701,10 @@ alone unless told otherwise:
 | `POST /search` with `{"query": "...", "k": 5}` | The chunks retrieval ranks first, without asking the model |
 | `GET /health` | `{"status": "ok", "chunks": 768}` |
 | `GET /metrics` | Prometheus counts: questions by outcome, seconds per question, model tokens, searches |
+
+With `DALEEL_ACCESS_CODE` set, `/ask`, `/search` and `/metrics` answer only a
+request whose `X-Access-Code` header holds the code, and any other with 401.
+The API's generated pages (`/docs`, `/openapi.json`) are not served.
 
 `/ask` sends a `step` event as each step of the flow ends, then an `answer`
 event, or an `error` event if the model cannot be reached:
